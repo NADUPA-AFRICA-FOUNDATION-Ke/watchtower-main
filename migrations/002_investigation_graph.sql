@@ -1,0 +1,12 @@
+-- Forward-only additive schema. Runtime applies the equivalent idempotent DDL
+-- for SQLite; deployments may execute this file during release validation.
+CREATE TABLE IF NOT EXISTS investigations (id TEXT PRIMARY KEY, brand TEXT NOT NULL, query TEXT, status TEXT, started_at TEXT, completed_at TEXT, requested_sources TEXT, successful_sources TEXT, limited_sources TEXT, failed_sources TEXT, unavailable_sources TEXT, coverage_percentage REAL, config_snapshot TEXT, budget_note TEXT);
+CREATE TABLE IF NOT EXISTS investigation_entities (investigation_id TEXT, entity_id TEXT, PRIMARY KEY(investigation_id, entity_id));
+CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, canonical_value TEXT NOT NULL, display_value TEXT, platform TEXT, metadata TEXT, confidence REAL, first_seen TEXT, last_seen TEXT, created_at TEXT, updated_at TEXT, UNIQUE(entity_type, canonical_value));
+CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, investigation_id TEXT NOT NULL, entity_id TEXT NOT NULL, source TEXT NOT NULL, evidence_type TEXT NOT NULL, source_url TEXT, observed_value TEXT, raw_metadata TEXT, observed_at TEXT, confidence REAL);
+CREATE TABLE IF NOT EXISTS relationships (id TEXT PRIMARY KEY, investigation_id TEXT NOT NULL, source_entity_id TEXT NOT NULL, target_entity_id TEXT NOT NULL, relationship_type TEXT NOT NULL, confidence REAL, evidence_id TEXT NOT NULL, first_seen TEXT, last_seen TEXT);
+CREATE TABLE IF NOT EXISTS campaigns (id TEXT PRIMARY KEY, public_id TEXT UNIQUE, brand TEXT, correlation_score REAL, correlation_label TEXT, threat_score REAL, system_classification TEXT, status TEXT, created_at TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS campaign_entities (campaign_id TEXT, entity_id TEXT, relationship_strength REAL, PRIMARY KEY(campaign_id, entity_id));
+CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, entity_id TEXT, heuristic_score REAL, model_score REAL, combined_threat_score REAL, scoring_version TEXT, model_provider TEXT, model_name TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS analyst_verdicts (id INTEGER PRIMARY KEY, entity_id TEXT, campaign_id TEXT, verdict TEXT NOT NULL, analyst_comment TEXT, analyst_identifier TEXT, created_at TEXT, previous_verdict TEXT, evidence_snapshot TEXT);
+CREATE TABLE IF NOT EXISTS source_runs (id INTEGER PRIMARY KEY, investigation_id TEXT, source TEXT, status TEXT, started_at TEXT, completed_at TEXT, results_returned INTEGER, error_code TEXT, error_message TEXT, rate_limit_metadata TEXT);

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  scamscan:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      # Add your API keys here if needed
+      # - GOOGLE_API_KEY=your_key_here
+      # - SHODAN_API_KEY=your_key_here
+    volumes:
+      - ./data:/app/data  # Persist database and logs
+    restart: unless-stopped

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "web/app.py": {
+      "maxDuration": 300,
+      "memory": 1024
+    }
+  },
+  "build": {
+    "env": {
+      "PYTHON_VERSION": "3.11"
+    }
+  },
+  "installCommand": "pip install -r requirements.txt"
+}

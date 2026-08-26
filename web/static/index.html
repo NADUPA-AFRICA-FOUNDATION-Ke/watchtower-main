@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watchtower</title>
+<!-- Inline so the page never requests a favicon it doesn't have: the 404 was
+     the only console error on a clean load, and it fires on every request. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23A82C22'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail-mark">
+    <span class="pip" aria-hidden="true"></span>
+    <span class="rail-name" id="rail-name">WATCHTOWER</span>
+  </div>
+  <nav class="rail-nav">
+    <div class="side-group" data-side="watchtower">
+      <span class="side-label">watchtower</span>
+      <button class="tab is-on" data-view="sweep" data-side="watchtower" aria-current="page">Monitor</button>
+      <button class="tab" data-view="archive" data-side="watchtower">Saved results</button>
+    </div>
+    <div class="side-group" data-side="scamscan">
+      <span class="side-label">scamscan</span>
+      <button class="tab" data-view="discover" data-side="scamscan">Find scam sites</button>
+      <button class="tab" data-view="queue" data-side="scamscan">Review queue</button>
+      <button class="tab" data-view="score" data-side="scamscan">Quick score</button>
+    </div>
+  </nav>
+  <div class="rail-status" id="ai-status" title="Relevance scoring status"></div>
+</header>
+
+<main>
+
+<section class="system-status" id="system-status" aria-labelledby="system-status-title">
+  <div>
+    <span class="eyebrow" id="system-status-title">Coverage &amp; system status</span>
+    <p id="system-status-summary">Checking available sources, scoring and storage…</p>
+  </div>
+  <button type="button" class="status-toggle" id="status-toggle" aria-expanded="false"
+          aria-controls="status-details">Details</button>
+  <ul id="status-details" hidden></ul>
+</section>
+
+<!-- ============================ SWEEP ============================ -->
+<section id="view-sweep">
+
+  <header class="view-head compact-head" tabindex="-1">
+    <div><span class="eyebrow">Watchtower / Monitor</span><h1>Monitor current sources</h1>
+    <p>Search news, regulatory, reference and selected social sources for a topic.</p></div>
+  </header>
+
+  <form class="console" id="sweep-form" autocomplete="off">
+    <label class="field-label" for="q">What are you looking for</label>
+    <div class="field">
+      <input id="q" name="q" type="text" spellcheck="false"
+             placeholder="beneficial ownership Kenya"
+             aria-describedby="q-hint">
+      <button type="submit" id="go">Monitor</button>
+    </div>
+    <p class="hint" id="q-hint">
+      Plain keywords work. GDELT also takes operators:
+      <code>sourcecountry:KE</code>, <code>"exact phrase"</code>, <code>(a OR b)</code>.
+    </p>
+
+    <div class="controls">
+      <fieldset class="control">
+        <legend>Look back</legend>
+        <div class="segmented" id="window" role="radiogroup" aria-label="Lookback window">
+          <button type="button" role="radio" data-h="24" aria-checked="false" tabindex="-1">24h</button>
+          <button type="button" role="radio" data-h="72" class="is-on" aria-checked="true">72h</button>
+          <button type="button" role="radio" data-h="168" aria-checked="false" tabindex="-1">7d</button>
+          <button type="button" role="radio" data-h="720" aria-checked="false" tabindex="-1">30d</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="control control-wide">
+        <legend>Open sources</legend>
+        <div class="chips" id="sources"></div>
+      </fieldset>
+
+      <fieldset class="control sanctions-control" id="sanctions-section">
+        <legend>Sanctions screening</legend>
+        <div class="chips" id="sanctions-source"></div>
+        <p class="hint source-note" id="sanctions-note">
+          OpenSanctions checks sanctions, PEP and watchlist records.
+        </p>
+      </fieldset>
+
+      <fieldset class="control">
+        <legend>Depth</legend>
+        <label class="toggle">
+          <input type="checkbox" id="fetch-bodies" checked>
+          <span>Read full articles</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="use-ai" checked>
+          <span id="ai-label">Score with a model</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="keep">
+          <span>Keep results</span>
+        </label>
+      </fieldset>
+    </div>
+  </form>
+
+  <!-- signature element: sources report in live as the sweep runs -->
+  <section class="trace" id="trace" hidden aria-live="polite">
+    <div class="trace-head">
+      <span class="trace-title" id="trace-title">Monitoring</span>
+      <span class="trace-stage" id="trace-stage"></span>
+      <button type="button" class="cancel-run" id="cancel-sweep">Stop updates</button>
+    </div>
+    <div class="trace-lanes" id="lanes"></div>
+  </section>
+
+  <section id="results" hidden>
+    <div class="summary" id="summary"></div>
+    <div class="layout">
+      <div class="findings" id="findings"></div>
+      <aside class="side" id="side"></aside>
+    </div>
+  </section>
+
+  <section class="empty" id="empty" hidden></section>
+</section>
+
+<!-- =========================== ARCHIVE =========================== -->
+<section id="view-archive" hidden>
+  <header class="view-head compact-head" tabindex="-1"><div><span class="eyebrow">Watchtower / Saved results</span>
+    <h1>Search saved results</h1><p>Return to findings you deliberately retained from earlier monitoring runs.</p></div></header>
+  <form class="console" id="archive-form" autocomplete="off">
+    <label class="field-label" for="aq">Search everything you've kept</label>
+    <div class="field">
+      <input id="aq" type="text" spellcheck="false"
+             placeholder="kenya AND (fraud OR laundering)">
+      <button type="submit">Search</button>
+    </div>
+    <p class="hint">
+      Full-text search over saved sweeps. Takes <code>AND</code>,
+      <code>OR</code>, <code>NOT</code>, <code>"phrases"</code> and
+      <code>prefix*</code>.
+    </p>
+  </form>
+  <div class="findings" id="archive-results"></div>
+</section>
+
+<!-- ========================== DISCOVER ========================== -->
+<section id="view-discover" hidden>
+  <header class="view-head">
+    <div>
+      <span class="eyebrow">ScamScan / OSINT</span>
+      <h1>Discover impersonating sites</h1>
+      <p>Search public indexes for candidate sites, then rank the evidence already visible in their search results.</p>
+    </div>
+    <span class="method-badge">search evidence</span>
+  </header>
+
+  <form class="console" id="discover-form" autocomplete="off">
+    <label class="field-label" for="discover-brand">Brand or product to investigate</label>
+    <div class="field field-with-limit">
+      <input id="discover-brand" type="text" spellcheck="false"
+             minlength="2" maxlength="80" placeholder="Fuliza" required>
+      <label class="compact-field" for="discover-limit">
+        <span>Results</span>
+        <input id="discover-limit" type="number" min="1" max="20" value="10">
+      </label>
+      <button type="submit" id="discover-go">Discover</button>
+    </div>
+    <p class="hint">
+      Candidates are search leads, not confirmed scams. Open a result and review
+      its evidence before changing an analyst disposition.
+    </p>
+  </form>
+
+  <section class="trace compact-trace" id="discover-trace" hidden aria-live="polite">
+    <div class="trace-head">
+      <span class="trace-title">Discovery run</span>
+      <span class="trace-stage" id="discover-stage"></span>
+    </div>
+  </section>
+  <div class="summary" id="discover-summary"></div>
+  <div class="findings" id="discover-results"></div>
+</section>
+
+<!-- ============================ QUEUE ============================ -->
+<section id="view-queue" hidden>
+
+  <form class="console" id="hunt-form" autocomplete="off">
+    <label class="field-label" for="topics">Hunt for scams against <span id="brand-name">the brand</span></label>
+    <div class="field">
+      <input id="topics" type="number" min="1" max="20" value="1"
+             aria-describedby="hunt-hint">
+      <button type="submit" id="hunt-go">Run hunt</button>
+    </div>
+    <p class="hint" id="hunt-hint">
+      Seed topics to expand, cheapest first. Web search is billed separately
+      from tokens — start with one.
+    </p>
+    <p class="hint warn-note" id="hunt-cost" hidden></p>
+  </form>
+
+  <section class="trace" id="hunt-trace" hidden aria-live="polite">
+    <div class="trace-head">
+      <span class="trace-title" id="hunt-title">Hunting</span>
+      <span class="trace-stage" id="hunt-stage"></span>
+      <button type="button" class="cancel-run" id="cancel-hunt">Stop updates</button>
+    </div>
+    <div class="hunt-log" id="hunt-log"></div>
+  </section>
+
+  <form class="console" id="queue-form" autocomplete="off">
+    <div class="controls">
+      <fieldset class="control">
+        <legend>Minimum score</legend>
+        <div class="segmented" id="min-score" role="radiogroup" aria-label="Minimum score">
+          <button type="button" role="radio" data-s="0" aria-checked="false" tabindex="-1">all</button>
+          <button type="button" role="radio" data-s="45" class="is-on" aria-checked="true">review</button>
+          <button type="button" role="radio" data-s="80" aria-checked="false" tabindex="-1">escalate</button>
+        </div>
+      </fieldset>
+      <fieldset class="control">
+        <legend>Disposition</legend>
+        <div class="segmented" id="disposition" role="radiogroup" aria-label="Disposition">
+          <button type="button" role="radio" data-d="new" class="is-on" aria-checked="true">new</button>
+          <button type="button" role="radio" data-d="escalated" aria-checked="false" tabindex="-1">escalated</button>
+          <button type="button" role="radio" data-d="confirmed" aria-checked="false" tabindex="-1">confirmed</button>
+          <button type="button" role="radio" data-d="all" aria-checked="false" tabindex="-1">all</button>
+        </div>
+      </fieldset>
+    </div>
+    <p class="hint">
+      The queue holds phone numbers, till numbers and names taken from live
+      pages — personal data. Confirm your lawful basis and retention limit
+      before working through it.
+    </p>
+  </form>
+
+  <div class="findings" id="queue-results"></div>
+</section>
+
+<!-- ============================ SCORE ============================ -->
+<section id="view-score" hidden>
+  <form class="console" id="score-form" autocomplete="off">
+    <label class="field-label" for="score-text">Score a page offline — no API call, no cost</label>
+    <textarea id="score-text" rows="5" spellcheck="false"
+              placeholder="Paste the page copy. Try: Confirmed. You have received Ksh2,530.00. New M-PESA balance is Ksh(*LOCKED*). Pay to POCHI TODAY."></textarea>
+    <div class="field">
+      <input id="score-url" type="text" spellcheck="false"
+             placeholder="http://mpesa-verify.co.ke/login">
+      <button type="submit">Score</button>
+    </div>
+    <p class="hint">
+      The same code a hunt uses. Every lexicon hit shows the source it was
+      taken from, so you can see why a page scored what it did.
+    </p>
+  </form>
+  <div id="score-out"></div>
+</section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+{
+  "brand": {
+    "name": "M-PESA",
+    "aliases": [
+      "mpesa", "m-pesa", "m pesa", "safaricom mpesa",
+      "fuliza", "fuliza limit", "fuliza loan",
+      "shwari", "m-shwari", "mshwari", "kcb mpesa",
+      "kesho", "kcb kesho",
+      "safaricom", "saf",
+      "tala", "branch", "zenka", "okash", "mbire",
+      "equity bank", "eazzy banking",
+      "co-op bank", "coop bank",
+      "kcb", "kcb bank",
+      "ncba", "ncba bank",
+      "absa", "absa bank",
+      "stanbic", "stanbic bank"
+    ],
+    "official_domains": ["safaricom.co.ke", "m-pesa.co.ke", "vodacom.co.tz"],
+    "official_handles": ["safaricomplc", "safaricom_care", "mpesaafrica"],
+    "markets": ["Kenya", "Tanzania", "Lesotho"]
+  },
+
+  "seed_topics": [
+    "fake agent or till impersonating the brand",
+    "investment or forex scheme promising guaranteed returns paid via the brand",
+    "instant loan app demanding an upfront processing fee",
+    "reversal or refund scam claiming money was sent by mistake",
+    "phishing page asking for PIN, OTP or full ID number",
+    "SIM swap or account unlock service sold informally",
+    "fake job or online-writing gig charging a registration fee",
+    "lucky draw or prize promotion demanding a claim payment"
+  ],
+
+  "_lexicon_note": [
+    "Every term carries [weight, source]. A term you cannot trace to a reported",
+    "case is a term you cannot defend in a review, so provenance is part of the",
+    "record. Sources:",
+    "  COMPASS2025 - Dogan, Gilbert & Kotut, 'Easy Come, Easy Go: Phone Enabled",
+    "                Small-Scale Financial Grift', ACM COMPASS '25.",
+    "                doi:10.1145/3715335.3736315. Survey of 73 Kenyan M-PESA",
+    "                users, 89 scams, with verbatim message samples.",
+    "  SAFARICOM   - Safaricom fraud-awareness advisories and the 2026 M-PESA",
+    "                prompt alert (SIM registered twice, line suspension,",
+    "                Fuliza limit increase, fake prize).",
+    "  CMA_CBK     - Capital Markets Authority / Central Bank of Kenya investor",
+    "                alerts on unlicensed schemes.",
+    "  DCI         - Directorate of Criminal Investigations warnings on",
+    "                recruitment and online investment fraud.",
+    "  PRESS       - Kenyan press reproducing scam SMS verbatim (Tuko, the Star,",
+    "                Africa Check fact-checks of circulating posts).",
+    "  UNVERIFIED  - plausible but not traced to a published case. Low weights;",
+    "                replace these from your own confirmed reports first."
+  ],
+
+  "lexicon": {
+    "en": {
+      "*locked*":                              [42, "COMPASS2025"],
+      "balance is locked":                     [40, "COMPASS2025"],
+      "balance is blocked":                    [40, "COMPASS2025"],
+      "pay to pochi":                          [34, "COMPASS2025"],
+      "confirmed. you have received":          [24, "COMPASS2025"],
+      "new m-pesa balance":                    [18, "COMPASS2025"],
+
+      "send your pin":                         [40, "SAFARICOM"],
+      "share your pin":                        [40, "SAFARICOM"],
+      "enter your pin":                        [34, "SAFARICOM"],
+      "confirm your pin":                      [34, "SAFARICOM"],
+      "mpesa pin":                             [20, "SAFARICOM"],
+      "m-pesa pin":                            [20, "SAFARICOM"],
+      "share the code":                        [32, "SAFARICOM"],
+      "share the otp":                         [36, "SAFARICOM"],
+      "send the otp":                          [36, "SAFARICOM"],
+      "one time password":                     [14, "SAFARICOM"],
+      "otp":                                   [10, "SAFARICOM"],
+
+      "registered twice":                      [32, "SAFARICOM"],
+      "sim card has been registered twice":    [40, "SAFARICOM"],
+      "verify your sim":                       [28, "SAFARICOM"],
+      "sim swap":                              [26, "SAFARICOM"],
+      "your line will be suspended":           [30, "SAFARICOM"],
+      "account has been suspended":            [26, "SAFARICOM"],
+      "unlock your account":                   [24, "SAFARICOM"],
+
+      "fuliza limit":                          [35, "SAFARICOM"],
+      "limit increase":                        [25, "SAFARICOM"],
+      "increase your limit":                   [25, "UNVERIFIED"],
+      "boost your":                            [25, "UNVERIFIED"],
+      "boost":                                 [15, "UNVERIFIED"],
+      "soft loan":                             [24, "COMPASS2025"],
+      "loan is now available to all":          [30, "COMPASS2025"],
+      "instant loan":                          [16, "DCI"],
+      "no crb check":                          [22, "DCI"],
+      "guaranteed approval":                   [22, "DCI"],
+      "no collateral":                         [14, "DCI"],
+
+      "processing fee":                        [30, "DCI"],
+      "registration fee":                      [26, "DCI"],
+      "activation fee":                        [30, "DCI"],
+      "clearance fee":                         [26, "DCI"],
+      "shortlisting fee":                      [30, "DCI"],
+      "upfront fee":                           [24, "CMA_CBK"],
+      "fee":                                   [15, "UNVERIFIED"],
+
+      "you have won":                          [30, "COMPASS2025"],
+      "lucky winner":                          [30, "COMPASS2025"],
+      "jackpot winner":                        [32, "PRESS"],
+      "claim your prize":                      [30, "COMPASS2025"],
+      "you are eligible for":                  [20, "SAFARICOM"],
+      "you have been selected":                [28, "COMPASS2025"],
+      "pokea pesa":                            [30, "PRESS"],
+
+      "guaranteed returns":                    [22, "CMA_CBK"],
+      "double your money":                     [30, "CMA_CBK"],
+      "make money sitting at home":            [34, "CMA_CBK"],
+      "daily profit":                          [22, "CMA_CBK"],
+      "risk free":                             [16, "CMA_CBK"],
+      "no risk":                               [14, "CMA_CBK"],
+      "financial freedom":                     [12, "PRESS"],
+      "binary bot":                            [22, "PRESS"],
+      "forex mentor":                          [20, "PRESS"],
+      "minimum deposit":                       [14, "CMA_CBK"],
+      "referral bonus":                        [16, "CMA_CBK"],
+      "withdraw your earnings":                [20, "CMA_CBK"],
+
+      "academic writing":                      [18, "COMPASS2025"],
+      "article writing":                       [18, "COMPASS2025"],
+      "freelance academic writers":            [26, "COMPASS2025"],
+      "work from home":                        [16, "PRESS"],
+      "no experience needed":                  [18, "DCI"],
+      "start earning today":                   [22, "DCI"],
+      "online training":                       [10, "COMPASS2025"],
+
+      "sent to you by mistake":                [26, "SAFARICOM"],
+      "sent by mistake":                       [22, "SAFARICOM"],
+      "please reverse":                        [24, "PRESS"],
+      "reverse the money":                     [26, "PRESS"],
+      "kindly send it back":                   [24, "PRESS"],
+      "reversal":                              [10, "SAFARICOM"],
+
+      "verified agent":                        [20, "SAFARICOM"],
+      "safaricom customer care":               [24, "SAFARICOM"],
+      "official m-pesa":                       [20, "SAFARICOM"],
+
+      "offer expires":                         [16, "PRESS"],
+      "limited slots":                         [12, "DCI"],
+      "act now":                               [10, "PRESS"],
+      "do not tell anyone":                    [26, "COMPASS2025"],
+      "keep this confidential":                [22, "COMPASS2025"],
+
+      "complete a secure payment":             [25, "UNVERIFIED"],
+      "payment confirmation":                  [20, "UNVERIFIED"],
+      "choose your":                           [15, "UNVERIFIED"],
+      "target limit":                          [20, "UNVERIFIED"],
+      "upgrade instantly":                     [20, "UNVERIFIED"],
+      "instant access":                        [18, "UNVERIFIED"],
+      "secure payment":                        [18, "UNVERIFIED"],
+      "protected by":                          [15, "UNVERIFIED"],
+      "no paperwork":                          [20, "UNVERIFIED"],
+      "digitally in minutes":                  [18, "UNVERIFIED"],
+      "continue to payment":                   [25, "UNVERIFIED"]
+    },
+
+    "sw": {
+      "namba ya siri":                         [40, "SAFARICOM"],
+      "nitumie namba ya siri":                 [44, "SAFARICOM"],
+      "pin ya mpesa":                          [30, "PRESS"],
+      "imeblock pin":                          [40, "PRESS"],
+      "nitumie hizo pesa":                     [34, "PRESS"],
+      "kwa hii namba":                         [26, "PRESS"],
+      "tafadhali nangoja":                     [20, "PRESS"],
+      "tuma pesa":                             [16, "PRESS"],
+      "upate bonus":                           [30, "PRESS"],
+      "tuma neno":                             [26, "PRESS"],
+      "mara ya kwanza":                        [12, "PRESS"],
+      "umeshinda":                             [30, "COMPASS2025"],
+      "hongera umeshinda":                     [34, "COMPASS2025"],
+      "pesa yako imezuiliwa":                  [34, "COMPASS2025"],
+      "akaunti yako imefungwa":                [30, "SAFARICOM"],
+      "bonyeza link":                          [26, "SAFARICOM"],
+      "bofya hapa":                            [22, "SAFARICOM"],
+      "ada ya usajili":                        [24, "DCI"],
+      "lipa kwanza":                           [22, "DCI"],
+      "faida ya uhakika":                      [28, "CMA_CBK"],
+      "mkopo papo hapo":                       [18, "DCI"],
+      "pesa haraka":                           [16, "UNVERIFIED"],
+      "usimwambie mtu":                        [26, "UNVERIFIED"],
+      "jiunge sasa":                           [16, "UNVERIFIED"],
+      "nafasi chache":                         [12, "UNVERIFIED"]
+    },
+
+    "sheng": {
+      "doublisha":                             [30, "UNVERIFIED"],
+      "unaeza doublisha":                      [32, "UNVERIFIED"],
+      "biz ya haraka":                         [18, "UNVERIFIED"],
+      "hela ya haraka":                        [16, "UNVERIFIED"],
+      "tuma fare":                             [20, "UNVERIFIED"]
+    }
+  },
+
+  "_counter_terms_note": [
+    "Anti-fraud content quotes the same phrases as the bait. A regulator",
+    "advisory, a bank security page and a news explainer all say 'never share",
+    "your PIN', so with a real lexicon they score like the scam unless something",
+    "pulls them down. These subtract before the 0-100 clamp. They were not",
+    "needed with the placeholder lexicon; they are load-bearing with this one."
+  ],
+  "counter_terms": {
+    "never share your pin":                    45,
+    "do not share your pin":                   45,
+    "will never ask":                          40,
+    "fraud awareness":                         40,
+    "scam alert":                              40,
+    "forward the message to 333":              40,
+    "how to avoid":                            25,
+    "beware of":                               25,
+    "public notice":                           25,
+    "press release":                           25,
+    "advisory":                                20,
+    "report to safaricom":                     25,
+    "was arrested":                            30,
+    "police said":                             25,
+    "according to":                            12,
+    "victims":                                 15,
+    "if you receive":                          15
+  },
+
+  "scoring": {
+    "weights": {
+      "lexicon": 1.0,
+      "artifact": 1.0,
+      "impersonation": 1.0,
+      "model": 1.0
+    },
+    "artifact_points": {
+      "msisdn": 12, "paybill": 20, "till": 20, "whatsapp": 22,
+      "telegram": 14, "crypto": 26, "shortlink": 10, "pin_request": 40
+    },
+    "review_threshold": 45,
+    "auto_escalate_threshold": 80
+  },
+
+  "search": {
+    "_provider_note": "null = auto: gemini if GEMINI_API_KEY is set, else anthropic. Force with \"gemini\" or \"anthropic\".",
+    "provider": null,
+    "gemini_model": "gemini-3.5-flash",
+    "model": "claude-sonnet-4-6",
+    "expansion_model": "claude-sonnet-4-6",
+    "max_uses_per_query": 4,
+    "queries_per_topic": 3,
+    "structured_outputs": true,
+    "web_search_tool_version": null,
+    "user_location": {
+      "type": "approximate",
+      "city": "Nairobi",
+      "region": "Nairobi County",
+      "country": "KE",
+      "timezone": "Africa/Nairobi"
+    },
+    "blocked_domains": ["safaricom.co.ke", "m-pesa.co.ke"]
+  }
+}

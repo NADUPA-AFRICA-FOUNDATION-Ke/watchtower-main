@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+!.env.example
+
+# Editors
+.vscode/
+.idea/
+
+# Dependencies
+.venv/
+venv/
+
+# Runtime databases
+*.db

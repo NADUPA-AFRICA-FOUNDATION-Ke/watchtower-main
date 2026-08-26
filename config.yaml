@@ -1,0 +1,101 @@
+# Everything you tune lives here. Adding a source should never mean editing code.
+
+fetch:
+  # ${WATCHTOWER_CONTACT} is expanded from .env, which is gitignored — so a
+  # real, reachable address gets sent without being committed. Set it before
+  # running anything sustained: SEC EDGAR answers 403 without a contact, and
+  # site owners who can reach you will email before they block you.
+  user_agent: "watchtower/0.1 (monitoring research; ${WATCHTOWER_CONTACT})"
+  delay_seconds: 2.0      # per domain, not global
+  timeout_seconds: 20
+  obey_robots: true       # leave this on
+
+storage:
+  database: "watchtower.db"
+  investigations_database: "investigations.db"
+  output_dir: "out"
+
+investigation:
+  max_depth: 3
+  max_entities: 250
+  max_domains: 75
+  max_social_accounts: 75
+  max_external_requests: 500
+  max_requests_per_source: 100
+  max_queue_size: 500
+  request_timeout: 15
+  max_redirects: 5
+  max_page_bytes: 2000000
+  domain_expansion_threshold: 0.55
+  social_expansion_threshold: 0.55
+  correlation_weights:
+    shares_phone: 30
+    promotes: 25
+    links_to: 25
+    shares_social_account: 25
+    shares_email: 25
+    shares_certificate: 20
+    shares_registrant: 20
+    redirects_to: 20
+    shares_ip: 10
+
+enrichment:
+  enabled: true           # silently no-ops without ANTHROPIC_API_KEY
+  batch_size: 40          # items enriched per run
+  escalate_above: 60      # Haiku score at which Sonnet takes a second look
+  categories:
+    - sanctions
+    - enforcement action
+    - fraud
+    - money laundering
+    - regulatory change
+    - virtual assets
+    - data protection
+    - corporate governance
+
+alerts:
+  min_relevance: 60
+  # Exact names and terms you want caught deterministically.
+  watchlist:
+    - Central Bank of Kenya
+    - Financial Reporting Centre
+    - beneficial ownership
+    - virtual asset service provider
+    - correspondent banking
+
+sources:
+  rss:
+    - name: cbk
+      url: "https://www.centralbank.go.ke/feed/"
+      type: regulatory
+      fetch_body: true
+    # RSSHub example. Self-host it and a lot of feed-less sites become feeds:
+    # - name: some-account
+    #   url: "http://localhost:1200/telegram/channel/somechannel"
+    #   type: social
+
+  gdelt:
+    - query: '"money laundering" (Kenya OR Tanzania) sourcelang:english'
+      timespan: "24h"
+      max_records: 40
+      fetch_body: false
+    - query: '"virtual asset" regulation Africa sourcelang:english'
+      timespan: "48h"
+      max_records: 30
+      fetch_body: false
+
+  webpage:
+    # Listing pages with no feed. This is a link differ, not a scraper: it keys
+    # on the links themselves, so a site redesign does not break it.
+    # link_pattern narrows to the documents you actually want.
+    # Commented out by default — point it at a regulator you actually watch,
+    # and check the pattern with `python run.py collect` before trusting it.
+    # - name: cma-kenya
+    #   url: "https://www.cma.or.ke/press-releases/"
+    #   link_pattern: "/press-release|/notice|/circular|\\.pdf$"
+    #   type: regulatory
+    #   limit: 15
+
+  reddit:
+    subreddits: []        # e.g. [fintech, kenya]
+    limit: 20
