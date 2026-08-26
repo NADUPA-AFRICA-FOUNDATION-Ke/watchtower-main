@@ -136,7 +136,9 @@ def main():
     ok &= check("short aliases do not match inside unrelated hostnames",
                 impersonation_score("https://safety.example", CFG["brand"])[0] == 0)
     ok &= check("short aliases still match as a deliberate DNS label",
-                impersonation_score("https://kcb.login.example", CFG["brand"])[0] > 0)
+                impersonation_score("https://saf.login.example", CFG["brand"])[0] > 0)
+    ok &= check("a real competing institution is never an M-PESA alias",
+                impersonation_score("https://kcb.co.ke", CFG["brand"])[0] == 0)
 
     print("\nhost infrastructure ratings")
     hosted = {"url": "fuliza-limit.vercel.app", "summary": ""}

@@ -211,6 +211,15 @@ def impersonation_score(url, brand):
                           for label in labels):
             label_hits.append(alias)
 
+    excluded = [fold(name) for name in brand.get("excluded_brands", [])]
+    excluded_hits = [
+        name for name in excluded
+        if name and any(name == label if len(name) <= 3 else name in label
+                        for label in labels)
+    ]
+    if excluded_hits and not label_hits:
+        return 0, f"excluded competing brand: {excluded_hits[0]}"
+
     score = 0
     reason = []
     if best >= 0.85:

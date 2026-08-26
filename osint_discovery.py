@@ -157,16 +157,11 @@ def generate_queries(cfg, brand_keyword=None):
     if brand_keyword:
         keywords = [brand_keyword]
     else:
-        # Prioritize high-value keywords
-        keywords = []
-        for alias in aliases:
-            alias_lower = alias.lower()
-            # Prioritize financial product names and brand names
-            if any(term in alias_lower for term in ["fuliza", "shwari", "kcb", "tala", "branch", "zenka"]):
-                keywords.insert(0, alias)
-            elif len(alias.split()) <= 2:  # Short aliases are better for search
-                keywords.append(alias)
-        
+        # Prioritize short, search-friendly aliases. Priority must come only
+        # from this brand's configured aliases so another institution's name
+        # cannot leak into every brand profile's searches.
+        keywords = [alias for alias in aliases if len(alias.split()) <= 2]
+
         # Ensure we have at least the main brand name
         if not keywords and aliases:
             keywords = aliases[:5]

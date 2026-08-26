@@ -4,20 +4,25 @@
     "aliases": [
       "mpesa", "m-pesa", "m pesa", "safaricom mpesa",
       "fuliza", "fuliza limit", "fuliza loan",
-      "shwari", "m-shwari", "mshwari", "kcb mpesa",
-      "kesho", "kcb kesho",
-      "safaricom", "saf",
-      "tala", "branch", "zenka", "okash", "mbire",
-      "equity bank", "eazzy banking",
-      "co-op bank", "coop bank",
-      "kcb", "kcb bank",
-      "ncba", "ncba bank",
-      "absa", "absa bank",
-      "stanbic", "stanbic bank"
+      "shwari", "m-shwari", "mshwari",
+      "kcb mpesa", "kcb kesho", "kesho",
+      "safaricom", "saf"
     ],
     "official_domains": ["safaricom.co.ke", "m-pesa.co.ke", "vodacom.co.tz"],
     "official_handles": ["safaricomplc", "safaricom_care", "mpesaafrica"],
-    "markets": ["Kenya", "Tanzania", "Lesotho"]
+    "markets": ["Kenya", "Tanzania", "Lesotho"],
+    "_excluded_brands_note": [
+      "These are real Kenyan financial institutions that are NOT M-PESA and must",
+      "never be scored, queried, or reported as M-PESA aliases or impersonation",
+      "targets. 'kcb mpesa' and 'kcb kesho' stay in aliases above because they are",
+      "genuine Safaricom/KCB co-branded M-PESA products, not the bank itself."
+    ],
+    "excluded_brands": [
+      "tala", "branch", "zenka", "okash", "mbire",
+      "equity bank", "eazzy banking", "co-op bank", "coop bank",
+      "kcb", "kcb bank", "ncba", "ncba bank",
+      "absa", "absa bank", "stanbic", "stanbic bank"
+    ]
   },
 
   "seed_topics": [
