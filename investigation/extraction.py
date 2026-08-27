@@ -19,7 +19,9 @@ SOCIAL = {
     "x.com": ("x", r"^/([^/?#]+)"),
     "twitter.com": ("x", r"^/([^/?#]+)"),
     "t.me": ("telegram", r"^/([^/?#]+)"),
+    "telegram.me": ("telegram", r"^/([^/?#]+)"),
     "youtube.com": ("youtube", r"^/@?([^/?#]+)"),
+    "youtu.be": ("youtube", r"^/([^/?#]+)"),
     "bsky.app": ("bluesky", r"^/profile/([^/?#]+)"),
     "reddit.com": ("reddit", r"^/(?:u|user)/([^/?#]+)"),
 }
@@ -29,6 +31,10 @@ EMAIL_RE = re.compile(
     r"(?<![\w.-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])", re.I
 )
 PHONE_RE = re.compile(r"(?<!\d)(?:\+254|254|0)[\s().-]*[17]\d(?:[\s().-]*\d){7}(?!\d)")
+WHATSAPP_RE = re.compile(
+    r"(?:https?://(?:wa\.me/|api\.whatsapp\.com/send\?[^\s<'\"]*?phone=)|"
+    r"whatsapp://send\?[^\s<'\"]*?phone=)((?:\+|%2B)?\d{8,15})", re.I
+)
 
 
 def extract_entities(
@@ -51,10 +57,16 @@ def extract_entities(
             ((v, k) for k, v in SOCIAL.items() if host == k or host.endswith("." + k)),
             None,
         )
-        if host == "wa.me":
-            phone = normalize_phone(p.path.strip("/"), default_region)
+        if host in {"wa.me", "api.whatsapp.com"}:
+            value = p.path.strip("/")
+            if host == "api.whatsapp.com":
+                from urllib.parse import parse_qs
+                value = parse_qs(p.query).get("phone", [""])[0]
+            phone = normalize_phone(value, default_region)
             if phone:
                 add(Entity("phone_number", phone, phone, "whatsapp"))
+                add(Entity("social_account", normalize_social("whatsapp", phone), phone,
+                           "whatsapp"))
         elif social:
             (platform, pattern), _ = social
             m = re.match(pattern, p.path)
@@ -77,4 +89,12 @@ def extract_entities(
         phone = normalize_phone(value, default_region)
         if phone:
             add(Entity("phone_number", phone, phone))
+    for value in WHATSAPP_RE.findall(text):
+        from urllib.parse import unquote
+        value = unquote(value)
+        phone = normalize_phone(value, default_region)
+        if phone:
+            add(Entity("phone_number", phone, phone, "whatsapp"))
+            add(Entity("social_account", normalize_social("whatsapp", phone), phone,
+                       "whatsapp"))
     return list(found.values())

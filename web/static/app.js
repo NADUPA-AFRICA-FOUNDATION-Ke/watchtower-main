@@ -652,10 +652,10 @@ $("#discover-form").onsubmit = async (e) => {
   out.replaceChildren();
 
   try {
-    const r = await fetch("/api/discover", {
+    const r = await fetch("/api/investigations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brand, limit }),
+      body: JSON.stringify({ brand, query: brand, limit }),
     });
     const d = await r.json();
     if (!r.ok) {
@@ -664,18 +664,23 @@ $("#discover-form").onsubmit = async (e) => {
       return;
     }
 
-    stage.textContent = `${d.count} candidate${d.count === 1 ? "" : "s"}`;
+    const candidates = d.candidates || [];
+    stage.textContent = `${candidates.length} domain${candidates.length === 1 ? "" : "s"}`;
     const summary = $("#discover-summary");
     summary.append(el("span", null,
-      `${d.count} ranked candidate${d.count === 1 ? "" : "s"}`));
-    summary.append(el("span", "warn", "review before acting"));
-    if (!d.results.length) {
+      `${candidates.length} domains · ${d.counts?.social_account || 0} social accounts · ` +
+      `${d.counts?.phone_number || 0} phones`));
+    summary.append(el("span", "warn", d.zero_key_mode ? "zero-key OSINT mode" : "review before acting"));
+    renderInvestigationCoverage(d.coverage || {});
+    renderCampaigns(d.campaigns || []);
+    await renderInvestigationGraph(d.id);
+    if (!candidates.length) {
       const empty = el("div", "empty-inline");
       empty.append(el("h3", null, "No candidates returned"),
         el("p", null, "This only describes this search run; it does not establish that the brand is clean."));
       out.replaceChildren(empty);
     } else {
-      out.replaceChildren(...d.results.map(discoveryCard));
+      out.replaceChildren(...candidates.sort((a, b) => b.risk_score - a.risk_score).map(investigationCard));
     }
   } catch {
     stage.textContent = "incomplete";
@@ -685,6 +690,70 @@ $("#discover-form").onsubmit = async (e) => {
     button.textContent = "Find sites";
   }
 };
+
+function renderInvestigationCoverage(coverage) {
+  const box = $("#discover-coverage");
+  const failed = [...(coverage.failed || []), ...(coverage.unavailable || []), ...(coverage.limited || [])];
+  box.replaceChildren(el("h3", null, "Source coverage"),
+    el("p", null, `${coverage.successful?.length || 0} successful of ${coverage.configured || 0} configured`),
+    el("p", "hint", coverage.statement || "Coverage is limited to accessible sources."));
+  const tags = el("div", "tags");
+  (coverage.successful || []).forEach(name => tags.append(el("span", "tag", `✓ ${name}`)));
+  failed.forEach(item => tags.append(el("span", "tag warn", `✗ ${item.provider || item.source}: ${item.status}`)));
+  box.append(tags);
+}
+
+function renderCampaigns(campaigns) {
+  const box = $("#discover-campaigns");
+  if (!campaigns.length) { box.replaceChildren(); return; }
+  box.replaceChildren(el("h3", null, "Correlated campaigns"));
+  campaigns.forEach(item => box.append(el("p", "campaign-row",
+    `${item.public_id} · ${item.correlation_label} correlation · risk ${Math.round(item.threat_score || 0)}`)));
+}
+
+async function renderInvestigationGraph(id) {
+  const box = $("#discover-graph");
+  box.replaceChildren();
+  if (!id) return;
+  const response = await fetch(`/api/investigations/${encodeURIComponent(id)}/graph`);
+  if (!response.ok) return;
+  const graph = await response.json();
+  box.append(el("h3", null, `Entity graph · ${graph.nodes.length} nodes · ${graph.edges.length} edges`));
+  const nodes = el("div", "graph-nodes");
+  graph.nodes.slice(0, 40).forEach(node => nodes.append(el("span", `graph-node type-${node.entity_type}`,
+    `${node.entity_type}: ${node.display_value}`)));
+  box.append(nodes);
+  const edges = el("div", "graph-edges");
+  graph.edges.slice(0, 30).forEach(edge => edges.append(el("p", null,
+    `${edge.relationship_type} · ${edge.observed_value || "evidence"} · ${edge.source}`)));
+  box.append(edges);
+}
+
+function investigationCard(item) {
+  const c = el("article", "card");
+  const score = item.risk_score || 0;
+  const band = score >= 70 ? "HIGH" : score >= 45 ? "MED" : score >= 20 ? "LOW" : "WEAK";
+  c.style.setProperty("--band", BAND_COLOUR[band]);
+  const top = el("div", "card-top");
+  top.append(gauge(band), el("span", "score", Math.round(score)),
+    el("span", "flag", item.machine_verdict || "INSUFFICIENT_EVIDENCE"));
+  c.append(top);
+  const title = el("h3");
+  const link = el("a", null, item.domain); link.href = item.url; link.target = "_blank";
+  link.rel = "noopener noreferrer"; title.append(link); c.append(title);
+  c.append(el("p", "card-meta", `${Math.round((item.confidence || 0) * 100)}% confidence · ` +
+    `${item.evidence_count || 0} direct evidence records`));
+  const reasons = el("ol", "evidence-reasons");
+  (item.strongest_evidence || []).forEach(reason => reasons.append(el("li", null, reason)));
+  if (reasons.childNodes.length) c.append(el("h4", null, "Why Watchtower flagged this"), reasons);
+  if (item.contradictory_evidence?.length) {
+    c.append(el("p", "reason", `Contradictory evidence: ${item.contradictory_evidence.join("; ")}`));
+  }
+  const sources = el("div", "tags");
+  (item.sources || []).forEach(source => sources.append(el("span", "tag", source)));
+  c.append(sources);
+  return c;
+}
 
 function discoveryCard(item) {
   const c = el("article", "card");

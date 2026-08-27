@@ -10,6 +10,8 @@
     ],
     "official_domains": ["safaricom.co.ke", "m-pesa.co.ke", "vodacom.co.tz"],
     "official_handles": ["safaricomplc", "safaricom_care", "mpesaafrica"],
+    "products": ["Fuliza", "M-Shwari", "KCB M-PESA"],
+    "related_organizations": ["Safaricom", "KCB", "NCBA"],
     "markets": ["Kenya", "Tanzania", "Lesotho"],
     "_excluded_brands_note": [
       "These are real Kenyan financial institutions that are NOT M-PESA and must",

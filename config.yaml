@@ -16,16 +16,37 @@ storage:
   output_dir: "out"
 
 investigation:
-  max_depth: 3
+  max_depth: 2
+  max_pivot_depth: 2
   max_entities: 250
   max_domains: 75
   max_social_accounts: 75
   max_external_requests: 500
+  max_page_fetches: 20
+  max_global_requests: 8
   max_requests_per_source: 100
   max_queue_size: 500
   request_timeout: 15
   max_redirects: 5
   max_page_bytes: 2000000
+  cache_ttl:
+    dns: 900
+    webpage: 21600
+    rdap: 604800
+    certificate_transparency: 2592000
+    threat_intelligence: 21600
+    common_crawl: 604800
+  zero_key_providers:
+    duckduckgo: true
+    social_web_index: true
+    common_crawl: true
+    certificate_transparency: true
+    rdap: true
+    dns: true
+    ip_asn: true
+    tls: true
+    urlhaus: true
+    threatfox: true
   domain_expansion_threshold: 0.55
   social_expansion_threshold: 0.55
   correlation_weights:

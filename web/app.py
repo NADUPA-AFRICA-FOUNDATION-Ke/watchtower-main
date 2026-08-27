@@ -166,20 +166,40 @@ def list_sources():
     # same question as `default`. opensanctions is both a default and key-gated,
     # so keying the UI off `default` left it selected and silently returning
     # nothing — the worst possible failure for a sanctions check.
+    from watchtower.discovery.providers import default_providers
+    free_sources = [
+        {
+            "name": provider.name,
+            "default": True,
+            "needs_key": False,
+            "available": True,
+            "key_name": "",
+            "capabilities": list(provider.capabilities()),
+            "status": "configured",
+            "detail": "No commercial API key required; verified when queried",
+        }
+        for provider in default_providers()
+    ]
+    legacy = [
+        {
+            "name": n,
+            "default": n in DEFAULT_BACKENDS,
+            "needs_key": n in BACKEND_KEYS,
+            "available": has_credentials(n),
+            "key_name": BACKEND_KEYS.get(n, ""),
+        }
+        for n in BACKENDS
+    ]
     return {
         "sources": [
-            {
-                "name": n,
-                "default": n in DEFAULT_BACKENDS,
-                "needs_key": n in BACKEND_KEYS,
-                "available": has_credentials(n),
-                "key_name": BACKEND_KEYS.get(n, ""),
-            }
-            for n in BACKENDS
+            *free_sources,
+            *(item for item in legacy if item["name"] not in
+              {source["name"] for source in free_sources}),
         ],
         "ai_available": enricher.enabled,
         "ai_provider": available_provider() or "none",
         "ephemeral_storage": EPHEMERAL,
+        "zero_key_mode": not any(os.environ.get(key) for key in BACKEND_KEYS.values()),
     }
 
 
@@ -223,7 +243,8 @@ def system_health():
             "configured": configured("TIKTOK_ACCESS_TOKEN"),
             "status": "direct_api"
             if configured("TIKTOK_ACCESS_TOKEN")
-            else ("web_index_only" if configured("BRAVE_API_KEY") else "unavailable"),
+            else "web_index_only",
+            "detail": "Public index discovery only; direct crawling is not attempted",
         },
         "duckduckgo": {
             "configured": True,
@@ -231,6 +252,36 @@ def system_health():
             "detail": "unauthenticated provider; verified per investigation",
         },
     }
+    store = investigation_store()
+    try:
+        latest = store.conn.execute(
+            """SELECT sr.*,
+               (SELECT MAX(ok.completed_at) FROM source_runs ok
+                WHERE ok.source=sr.source AND ok.status='operational') AS last_ok
+               FROM source_runs sr JOIN (
+               SELECT source,MAX(id) AS max_id FROM source_runs GROUP BY source
+               ) newest ON newest.max_id=sr.id"""
+        ).fetchall()
+    finally:
+        store.conn.close()
+    from watchtower.discovery.providers import default_providers
+    for provider in default_providers():
+        sources[provider.name] = {
+            "configured": True,
+            "status": "configured",
+            "detail": "No key required; live availability not yet checked",
+            "capabilities": list(provider.capabilities()),
+        }
+    for row in latest:
+        sources[row["source"]] = {
+            **sources.get(row["source"], {}),
+            "configured": True,
+            "status": row["status"],
+            "last_attempt": row["started_at"],
+            "last_success": row["last_ok"],
+            "results": row["results_returned"],
+            "error": row["error_message"],
+        }
     return {
         "storage": {
             "persistent": not EPHEMERAL,
@@ -252,47 +303,41 @@ async def create_investigation(payload: dict = Body(...)):
     brand = str(payload.get("brand", "")).strip()
     if not 2 <= len(brand) <= 100:
         raise HTTPException(400, "brand must be between 2 and 100 characters")
-    from investigation.connectors import (
-        ConnectorHealth,
-        DiscoveryConnector,
-        DiscoveryResult,
-    )
-
-    class DuckDuckGoConnector(DiscoveryConnector):
-        name = "duckduckgo"
-
-        def is_configured(self):
-            return True
-
-        async def healthcheck(self):
-            return ConnectorHealth(
-                True,
-                "degraded",
-                detail="Unauthenticated provider; verified by this run",
-            )
-
-        async def search(self, q, context):
-            import osint_discovery
-
-            rows = await asyncio.to_thread(osint_discovery.search_duckduckgo, q, 10)
-            return [
-                DiscoveryResult(
-                    r.get("url", ""),
-                    r.get("title", ""),
-                    r.get("summary", ""),
-                    "duckduckgo",
-                    {"query": q},
-                )
-                for r in rows
-                if r.get("url")
-            ]
-
-    from investigation import InvestigationEngine
+    try:
+        requested_limit = int(payload.get("limit", 20))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "limit must be a number")
+    requested_limit = max(1, min(requested_limit, 75))
+    from watchtower.discovery.cache import ProviderCache
+    from watchtower.discovery.orchestrator import DiscoveryOrchestrator
+    from watchtower.discovery.providers import default_providers
+    from watchtower.discovery.safe_fetch import SafeFetcher
 
     store = investigation_store()
     try:
-        return await InvestigationEngine(store, [DuckDuckGoConnector()]).investigate(
-            brand, str(payload.get("query") or brand)
+        scam_cfg = scamscan_config()
+        configured_brand = scam_cfg.get("brand", {})
+        if brand.lower() not in {
+            configured_brand.get("name", "").lower(),
+            *(str(x).lower() for x in configured_brand.get("aliases", [])),
+        }:
+            configured_brand = {
+                "name": brand, "aliases": [brand], "official_domains": [],
+                "products": [], "related_organizations": [],
+            }
+        inv_cfg = config().get("investigation", {})
+        cache = ProviderCache(data_path("provider-cache.db"))
+        engine = DiscoveryOrchestrator(
+            store,
+            default_providers(cache),
+            fetcher=SafeFetcher(cache=cache),
+            max_domains=min(requested_limit, int(inv_cfg.get("max_domains", 40))),
+            max_fetches=int(inv_cfg.get("max_page_fetches", 20)),
+            max_pivot_depth=int(inv_cfg.get("max_pivot_depth", 2)),
+            max_global_requests=int(inv_cfg.get("max_global_requests", 8)),
+        )
+        return await engine.investigate(
+            brand, str(payload.get("query") or brand), configured_brand
         )
     finally:
         store.conn.close()
@@ -303,6 +348,7 @@ def get_investigation(investigation_id: str):
     store = investigation_store()
     try:
         row = store.get("investigations", investigation_id)
+        runs = store.source_runs(investigation_id) if row else []
     finally:
         store.conn.close()
     if not row:
@@ -317,6 +363,8 @@ def get_investigation(investigation_id: str):
     ):
         if row.get(key):
             row[key] = json.loads(row[key])
+    row["source_runs"] = runs
+    row["zero_key_mode"] = not any(os.environ.get(key) for key in BACKEND_KEYS.values())
     return row
 
 

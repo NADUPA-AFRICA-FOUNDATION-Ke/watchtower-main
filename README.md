@@ -106,6 +106,45 @@ fan out across sources -> dedupe -> fetch bodies -> clean
 
 Results print to the terminal; a full markdown report lands in `out/`.
 
+## Free-first impersonation investigations
+
+The **Discover** view now runs an evidence graph investigation rather than a
+DuckDuckGo-results classifier. It remains useful with an empty `.env`:
+
+```text
+CT + Common Crawl + open-web/social indexes
+  -> canonical domains and social accounts
+  -> RDAP + DNS + live TLS + Team Cymru ASN context
+  -> URLhaus + ThreatFox
+  -> SSRF-safe bounded page inspection
+  -> phones, email, social, payment, analytics, favicon and HTML entities
+  -> exact-identifier and template correlation
+  -> evidence score, machine verdict, campaigns and coverage
+```
+
+DuckDuckGo is one provider in this pipeline. A failure is stored as a source
+run and shown as failed, limited, or unavailable; it is never converted to a
+zero-result success. TikTok, Facebook, and Instagram are deliberately marked
+`web_index_only`: Watchtower records public links and indexed profiles but does
+not bypass login, CAPTCHA, or platform controls.
+
+No commercial API is required by the investigation engine. Optional legacy
+Watchtower/ScamScan integrations remain available, but missing credentials do
+not disable CT, Common Crawl, RDAP, DNS, TLS, URLhaus, ThreatFox, safe fetching,
+local correlation, or SQLite graph storage.
+
+Important modules:
+
+```text
+watchtower/discovery/base.py          provider/run contracts
+watchtower/discovery/providers.py     free discovery and enrichment adapters
+watchtower/discovery/safe_fetch.py    SSRF and resource-bounded HTTP
+watchtower/discovery/page_analysis.py deterministic HTML/entity analysis
+watchtower/discovery/orchestrator.py  bounded pipeline and reverse pivots
+watchtower/discovery/scoring.py       evidence-based machine verdicts
+investigation/storage.py              SQLite entities/evidence/edges/campaigns
+```
+
 | Source | What it gives you | Key needed |
 |---|---|---|
 | `gdelt` | global news, all languages, 15-min lag | no |

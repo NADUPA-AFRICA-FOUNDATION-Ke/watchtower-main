@@ -156,10 +156,10 @@
   <header class="view-head">
     <div>
       <span class="eyebrow">ScamScan / OSINT</span>
-      <h1>Discover impersonating sites</h1>
-      <p>Search public indexes for candidate sites, then rank the evidence already visible in their search results.</p>
+      <h1>Financial impersonation investigation</h1>
+      <p>Discover across free public sources, verify safely, extract entities, and reveal connected campaigns.</p>
     </div>
-    <span class="method-badge">search evidence</span>
+    <span class="method-badge">zero-key evidence graph</span>
   </header>
 
   <form class="console" id="discover-form" autocomplete="off">
@@ -174,8 +174,8 @@
       <button type="submit" id="discover-go">Discover</button>
     </div>
     <p class="hint">
-      Candidates are search leads, not confirmed scams. Open a result and review
-      its evidence before changing an analyst disposition.
+      Search discovers candidates. Page, infrastructure and threat observations
+      establish risk. Exact identifier reuse reveals campaigns.
     </p>
   </form>
 
@@ -186,6 +186,9 @@
     </div>
   </section>
   <div class="summary" id="discover-summary"></div>
+  <div class="coverage-panel" id="discover-coverage"></div>
+  <div class="campaign-panel" id="discover-campaigns"></div>
+  <div class="investigation-graph" id="discover-graph"></div>
   <div class="findings" id="discover-results"></div>
 </section>
 

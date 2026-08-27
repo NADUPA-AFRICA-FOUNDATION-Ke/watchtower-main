@@ -82,9 +82,15 @@ def main():
     # Compare against the registry, not a hardcoded number — the last count
     # here drifted silently and told us 33 checks when there were 36.
     from core.sources import BACKENDS, DEFAULT_BACKENDS
-    ok &= check("lists every backend", len(body["sources"]) == len(BACKENDS))
-    ok &= check("marks defaults", sum(s["default"] for s in body["sources"])
-                == len(DEFAULT_BACKENDS))
+    names = {source["name"] for source in body["sources"]}
+    ok &= check("lists every backend", set(BACKENDS) <= names)
+    ok &= check("marks defaults", all(
+        next(source for source in body["sources"] if source["name"] == name)["default"]
+        for name in DEFAULT_BACKENDS
+    ))
+    ok &= check("lists the free investigation providers",
+                {"certificate_transparency", "common_crawl", "rdap", "dns",
+                 "tls", "urlhaus", "threatfox"} <= names)
     ok &= check("every key-gated source names its key",
                 all(s["key_name"] for s in body["sources"] if s["needs_key"]))
     ok &= check("flags the one needing a key",

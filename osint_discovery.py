@@ -362,33 +362,28 @@ def evaluate_url(url, title, summary, cfg):
 
 def fetch_and_analyze_url(url, cfg):
     """Fetch and analyze a single URL for the web API."""
+    import asyncio
     import re
     from urllib.parse import urlparse
     
     # Fetch the URL content
     try:
-        from core.fetch import Fetcher
-        fetcher = Fetcher(
-            user_agent="Mozilla/5.0 (compatible; FraudGuard/1.0)",
-            delay=0,
-            timeout=20,
-            obey_robots=False
-        )
-        
-        # Fetch page content - use .get() method which returns FetchResult
-        result = fetcher.get(url)
-        html_content = result.html if result.ok else ""
-        
-        # Extract text from HTML (simple approach)
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Remove script and style elements
-        for script in soup(['script', 'style']):
-            script.decompose()
-        
-        text = soup.get_text(separator=' ', strip=True)[:10000]
-        title = soup.title.string if soup.title else ""
+        from watchtower.discovery.page_analysis import analyze_page
+        from watchtower.discovery.safe_fetch import SafeFetcher
+
+        async def collect():
+            fetcher = SafeFetcher(max_bytes=2_000_000, max_redirects=4)
+            try:
+                return await fetcher.fetch(url)
+            finally:
+                await fetcher.close()
+
+        result = asyncio.run(collect())
+        if result.error or not result.body:
+            raise ValueError(result.error or "empty response")
+        page = analyze_page(result.text, result.final_url or url)
+        text = page.visible_text[:10000]
+        title = page.title
         
         # Create finding structure
         finding = {

@@ -17,3 +17,4 @@ duckduckgo-search>=5.3
 fastapi>=0.115
 uvicorn>=0.30
 google-genai>=1.47.0   # Gemini provider (free tier)
+dnspython>=2.6         # direct DNS record collection; open source

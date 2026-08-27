@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS campaign_entities (campaign_id TEXT, entity_id TEXT, 
 CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, entity_id TEXT, heuristic_score REAL, model_score REAL, combined_threat_score REAL, scoring_version TEXT, model_provider TEXT, model_name TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS analyst_verdicts (id INTEGER PRIMARY KEY, entity_id TEXT, campaign_id TEXT, verdict TEXT NOT NULL, analyst_comment TEXT, analyst_identifier TEXT, created_at TEXT, previous_verdict TEXT, evidence_snapshot TEXT);
 CREATE TABLE IF NOT EXISTS source_runs (id INTEGER PRIMARY KEY, investigation_id TEXT, source TEXT, status TEXT, started_at TEXT, completed_at TEXT, results_returned INTEGER, error_code TEXT, error_message TEXT, rate_limit_metadata TEXT);
+CREATE TABLE IF NOT EXISTS observations (id INTEGER PRIMARY KEY, investigation_id TEXT, entity_id TEXT, provider TEXT, observation_type TEXT, raw_value TEXT, normalized_value TEXT, source_url TEXT, observed_at TEXT, metadata TEXT);
+CREATE INDEX IF NOT EXISTS idx_observation_entity ON observations(entity_id, observed_at);

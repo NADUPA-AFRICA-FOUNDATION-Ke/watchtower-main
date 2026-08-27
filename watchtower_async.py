@@ -121,7 +121,9 @@ class WatchtowerEngine:
             # Add random jitter to avoid detection patterns
             await asyncio.sleep(random.uniform(0.1, 0.3))
             
-            async with self.session.get(url, allow_redirects=allow_redirects, ssl=False) as response:
+            # Never disable certificate verification in an OSINT collector:
+            # hostile candidates can otherwise tamper with evidence in transit.
+            async with self.session.get(url, allow_redirects=allow_redirects) as response:
                 if response.status == 200:
                     return response
                 else:

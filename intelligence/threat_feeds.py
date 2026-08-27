@@ -108,13 +108,13 @@ class ThreatIntelligence:
                     "note": "PhishTank API key not configured"
                 }
             
-            # Example API call structure (would need actual implementation)
-            # This is a placeholder - real implementation needs API integration
+            # This legacy collector has no implemented API call. Never report
+            # an integration as available merely because a key string exists.
             return {
-                "matched": False,  # Would be True if found in PhishTank
-                "available": True,
+                "matched": False,
+                "available": False,
                 "source": "PhishTank",
-                "threat_type": "phishing"
+                "note": "Connector not implemented; no lookup was performed"
             }
             
         except Exception as e:
@@ -139,12 +139,14 @@ class ThreatIntelligence:
             # 2. Parse and store in database
             # 3. Check URL/domain against stored entries
             
-            # Placeholder implementation
+            # Feed mirroring needs an explicit terms/retention policy and local
+            # cache. Until that exists, report unavailable rather than a fake
+            # successful negative.
             return {
-                "matched": False,  # Would check against downloaded feed
-                "available": True,
+                "matched": False,
+                "available": False,
                 "source": "OpenPhish",
-                "threat_type": "phishing"
+                "note": "Community-feed mirror is not configured"
             }
             
         except Exception as e:

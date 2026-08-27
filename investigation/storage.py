@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS campaign_entities(campaign_id TEXT, entity_id TEXT, r
 CREATE TABLE IF NOT EXISTS scores(id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id TEXT, heuristic_score REAL, model_score REAL, combined_threat_score REAL, scoring_version TEXT, model_provider TEXT, model_name TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS analyst_verdicts(id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id TEXT, campaign_id TEXT, verdict TEXT NOT NULL, analyst_comment TEXT, analyst_identifier TEXT, created_at TEXT, previous_verdict TEXT, evidence_snapshot TEXT);
 CREATE TABLE IF NOT EXISTS source_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, investigation_id TEXT, source TEXT, status TEXT, started_at TEXT, completed_at TEXT, results_returned INTEGER, error_code TEXT, error_message TEXT, rate_limit_metadata TEXT);
+CREATE TABLE IF NOT EXISTS observations(id INTEGER PRIMARY KEY AUTOINCREMENT, investigation_id TEXT, entity_id TEXT, provider TEXT, observation_type TEXT, raw_value TEXT, normalized_value TEXT, source_url TEXT, observed_at TEXT, metadata TEXT);
+CREATE INDEX IF NOT EXISTS idx_observation_entity ON observations(entity_id,observed_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_entity ON evidence(entity_id,observed_at);
 CREATE INDEX IF NOT EXISTS idx_rel_investigation ON relationships(investigation_id);
 """
@@ -24,7 +26,9 @@ VERDICTS = {
     "likely_malicious",
     "suspicious",
     "needs_review",
+    "needs_investigation",
     "benign",
+    "legitimate",
     "false_positive",
     "duplicate",
     "monitor",
@@ -80,7 +84,7 @@ class InvestigationStore:
                     (iid, e.id),
                 )
             for x in evidence:
-                self.conn.execute(
+                inserted = self.conn.execute(
                     "INSERT OR IGNORE INTO evidence VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         x.id,
@@ -95,6 +99,17 @@ class InvestigationStore:
                         x.confidence,
                     ),
                 )
+                if inserted.rowcount:
+                    self.conn.execute(
+                        """INSERT INTO observations(
+                           investigation_id,entity_id,provider,observation_type,
+                           raw_value,normalized_value,source_url,observed_at,metadata)
+                           VALUES(?,?,?,?,?,?,?,?,?)""",
+                        (iid, x.entity_id, x.source, x.evidence_type,
+                         x.raw_metadata.get("raw_value", x.observed_value),
+                         x.raw_metadata.get("normalized_value", x.observed_value),
+                         x.source_url, x.observed_at, json.dumps(x.raw_metadata)),
+                    )
             for r in relationships:
                 self.conn.execute(
                     "INSERT OR IGNORE INTO relationships VALUES(?,?,?,?,?,?,?,?,?)",
@@ -132,6 +147,38 @@ class InvestigationStore:
             ),
         )
         self.conn.commit()
+
+    def record_source_run(self, iid, health):
+        self.conn.execute(
+            """INSERT INTO source_runs(
+               investigation_id,source,status,started_at,completed_at,
+               results_returned,error_code,error_message,rate_limit_metadata)
+               VALUES(?,?,?,?,?,?,?,?,?)""",
+            (iid, health.provider, health.status, health.last_attempt, now(),
+             health.results, health.status if health.error else None,
+             health.error, json.dumps({**health.rate_limit,
+                                       "duration_ms": health.duration_ms})),
+        )
+        self.conn.commit()
+
+    def save_score(self, entity_id, scored):
+        self.conn.execute(
+            """INSERT INTO scores(entity_id,heuristic_score,model_score,
+               combined_threat_score,scoring_version,model_provider,model_name,created_at)
+               VALUES(?,?,?,?,?,?,?,?)""",
+            (entity_id, scored.risk_score, None, scored.risk_score,
+             scored.scoring_version, "none", "evidence-rules", now()),
+        )
+        self.conn.execute(
+            "UPDATE entities SET metadata=json_set(COALESCE(metadata,'{}'), '$.risk', json(?)) WHERE id=?",
+            (json.dumps(scored.dict()), entity_id),
+        )
+        self.conn.commit()
+
+    def source_runs(self, iid):
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM source_runs WHERE investigation_id=? ORDER BY id", (iid,)
+        )]
 
     def create_campaign(self, brand, entity_ids, correlation, label, threat_score=None):
         year = now()[:4]

@@ -102,6 +102,14 @@ internals. `hunt()` takes a `progress(dict)` callback for exactly the same
 reason `sweep()` does: the CLI renders the dicts as lines, `/api/scamscan/hunt`
 forwards them as SSE frames, and neither owns the format.
 
+`POST /api/investigations` is the graph-oriented workflow used by the Discover
+view. Its free-first providers live under `watchtower/discovery/` and persist
+through `investigation/storage.py`. Do not route it back through
+`/api/discover`, which is the legacy DuckDuckGo classifier retained for API
+compatibility. Provider observations become `Evidence`; derived correlations
+must reference an evidence ID; optional model interpretation never creates an
+observation. Direct social-platform crawling is intentionally absent.
+
 Note the event vocabulary differs by design. A per-query failure is
 `unsearched`, not `failed` — `failed` is the stream-level fatal event on both
 sides, and a query that could not run is a normal, expected outcome that must
