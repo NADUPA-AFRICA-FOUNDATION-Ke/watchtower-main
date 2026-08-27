@@ -317,14 +317,31 @@ async def create_investigation(payload: dict = Body(...)):
     try:
         scam_cfg = scamscan_config()
         configured_brand = scam_cfg.get("brand", {})
-        if brand.lower() not in {
+        configured_terms = {
             configured_brand.get("name", "").lower(),
             *(str(x).lower() for x in configured_brand.get("aliases", [])),
-        }:
+            *(str(x).lower() for x in configured_brand.get("products", [])),
+        }
+        # Product/campaign searches such as ``Fuliza Increase`` should inherit
+        # the configured M-PESA profile instead of becoming an isolated brand
+        # with no aliases. This preserves the parent brand context while
+        # keeping unrelated financial institutions out of the query.
+        brand_lower = brand.lower()
+        matched_terms = [term for term in configured_terms
+                         if term and (term in brand_lower or brand_lower in term)]
+        if not matched_terms:
             configured_brand = {
                 "name": brand, "aliases": [brand], "official_domains": [],
                 "products": [], "related_organizations": [],
             }
+        else:
+            configured_brand = dict(configured_brand)
+            configured_brand["aliases"] = list(dict.fromkeys([
+                *configured_brand.get("aliases", []),
+                *configured_brand.get("products", []),
+                *matched_terms,
+                brand,
+            ]))
         inv_cfg = config().get("investigation", {})
         cache = ProviderCache(data_path("provider-cache.db"))
         engine = DiscoveryOrchestrator(
