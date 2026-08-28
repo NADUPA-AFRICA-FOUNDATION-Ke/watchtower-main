@@ -160,6 +160,7 @@ investigation/storage.py              SQLite entities/evidence/edges/campaigns
 | `bluesky` | public posts via the official API | `BLUESKY_HANDLE` + `BLUESKY_APP_PASSWORD` |
 | `reddit` | subreddit search via the official API | `REDDIT_CLIENT_ID` + `_SECRET` |
 | `x` | posts via X's official paid API | `X_BEARER_TOKEN` |
+| `socialcrawl` | public posts across multiple social platforms (opt-in; paid credits) | `SOCIALCRAWL_API_KEY` |
 
 `python run.py sources` prints this list with the keys you actually have set,
 and marks the ones that will skip themselves.
@@ -167,6 +168,7 @@ and marks the ones that will skip themselves.
 ```bash
 python run.py sources                                     # list them
 python run.py sweep "acme ltd" --sources gdelt,opensanctions
+python run.py sweep "acme ltd scam" --sources socialcrawl --hours 168
 python run.py sweep "crypto licensing" --hours 720 --top 40
 python run.py sweep "quick look" --no-fetch --no-ai       # seconds, headlines only
 python run.py sweep "acme ltd" --save                     # keep it in the archive

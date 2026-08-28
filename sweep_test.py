@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core import report
 from core.fetch import Fetcher
 from core.sources import (SourceError, SourceSkipped, gdelt,
-                          opensanctions, wikipedia)
+                          opensanctions, socialcrawl, wikipedia)
 from core.sweep import _diversify, _keyword_score, _terms, sweep
 from core.models import Item
 
@@ -102,6 +102,20 @@ BRAVE_JSON = {"web": {"results": [
      "description": "New disclosure thresholds for trusts.",
      "page_age": "2026-08-12", "meta_url": {"hostname": "regulator.example.vercel.app"}}]}}
 
+SOCIALCRAWL_JSON = {
+    "success": True, "credits_used": 20, "credits_remaining": 80,
+    "request_id": "req_test", "cached": False,
+    "data": {"items": [{
+        "id": "post-1", "platform": "tiktok",
+        "url": "https://www.tiktok.com/@fraudwatch/video/1",
+        "text": "Beneficial ownership scam targeting Kenya businesses",
+        "author": {"username": "fraudwatch"},
+        "engagement": {"likes": 12, "comments": 3},
+        "computed": {"language": "en"},
+        "created_at": "2026-08-12T10:00:00Z",
+    }]},
+}
+
 
 def handler(request: httpx.Request) -> httpx.Response:
     u = str(request.url)
@@ -125,6 +139,8 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=GLEIF_JSON)
     if "api.search.brave.com" in u:
         return httpx.Response(200, json=BRAVE_JSON)
+    if "socialcrawl.dev/v1/search/everywhere" in u:
+        return httpx.Response(200, json=SOCIALCRAWL_JSON)
     if "/sport/" in u:
         return httpx.Response(200, text=IRRELEVANT_HTML)
     if "outlet-b.com" in u or "outlet-a.co.ke" in u or "outlet-c.co.ke" in u:

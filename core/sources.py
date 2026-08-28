@@ -13,6 +13,7 @@ maintain when a site redesigns.
   bluesky        public post search over the AT Protocol, no key
   reddit         official OAuth API   (REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET)
   x              X/Twitter recent search, official paid API (X_BEARER_TOKEN)
+  socialcrawl    cross-platform public social search (SOCIALCRAWL_API_KEY)
   gleif          Legal Entity Identifiers, free, no key
   opencorporates company registries      (OPENCORPORATES_API_KEY)
   sec_edgar      US filings full-text, useful for company checks
@@ -601,6 +602,102 @@ def x_twitter(query: str, fetcher: Fetcher, hours: int = 72,
     return out
 
 
+# ------------------------------------------------------------- SocialCrawl
+
+def _socialcrawl_items(payload: dict) -> list[dict]:
+    """Accept the documented meta envelope and tolerate nested data wrappers."""
+    data = payload.get("data") or {}
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    for key in ("items", "results", "posts"):
+        rows = data.get(key) if isinstance(data, dict) else None
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+def _first(mapping: dict, *keys, default=""):
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
+                limit: int = 20) -> list[Item]:
+    """Search public posts across SocialCrawl's Universal Search API.
+
+    The endpoint costs credits, so this backend is opt-in rather than part of
+    DEFAULT_BACKENDS. SocialCrawl supplies the public post data; Watchtower
+    still applies its normal ranking, dedupe, provenance and retention rules.
+    """
+    key = os.environ.get("SOCIALCRAWL_API_KEY")
+    if not key:
+        raise SourceSkipped("SOCIALCRAWL_API_KEY is not set")
+
+    lookback_days = max(1, min(3650, (max(0, hours) + 23) // 24))
+    url = "https://www.socialcrawl.dev/v1/search/everywhere?" + urlencode({
+        "query": query,
+        "lookback_days": lookback_days,
+    })
+    res = fetcher.get(url, api=True, headers={
+        "x-api-key": key,
+        "Accept": "application/json",
+    })
+    if not res.ok:
+        _fail(res)
+    try:
+        payload = json.loads(res.html)
+    except json.JSONDecodeError:
+        raise SourceError("200 but the response body was not valid JSON")
+    if payload.get("success") is False:
+        detail = payload.get("error") or payload.get("message") or "API reported failure"
+        raise SourceError(str(detail))
+
+    envelope_meta = {
+        key: payload.get(key)
+        for key in ("request_id", "credits_used", "credits_remaining", "cached")
+        if payload.get(key) is not None
+    }
+    out = []
+    for row in _socialcrawl_items(payload)[:limit]:
+        author = row.get("author") or {}
+        engagement = row.get("engagement") or {}
+        computed = row.get("computed") or row.get("metadata") or {}
+        if not isinstance(author, dict):
+            author = {"username": str(author)}
+        platform = str(_first(row, "platform", "source", default="socialcrawl"))
+        item_url = str(_first(row, "url", "permalink", "web_url"))
+        post_id = str(_first(row, "id", "post_id"))
+        handle = str(_first(author, "username", "handle", "name"))
+        if not item_url and post_id:
+            # Keep a stable identity without pretending to know a platform URL.
+            item_url = f"socialcrawl://{platform}/{post_id}"
+        if not item_url:
+            continue
+        text = str(_first(row, "text", "content", "description", "caption"))
+        raw_meta = {
+            **envelope_meta,
+            "platform": platform,
+            "post_id": post_id,
+            "engagement": engagement if isinstance(engagement, dict) else {},
+            "computed": computed if isinstance(computed, dict) else {},
+        }
+        out.append(Item(
+            url=item_url,
+            source=f"socialcrawl:{platform}",
+            source_type="social",
+            title=str(_first(row, "title", default=text[:160])),
+            text=text[:10000],
+            author=handle,
+            published_at=str(_first(row, "published_at", "created_at", "timestamp")),
+            lang=str(_first(computed, "language", default=_first(row, "language"))),
+            raw_meta=raw_meta,
+        ))
+    return out
+
+
 BACKENDS = {
     "gdelt": gdelt,
     "google_news": google_news,
@@ -611,6 +708,7 @@ BACKENDS = {
     "bluesky": bluesky,
     "reddit": reddit,
     "x": x_twitter,
+    "socialcrawl": socialcrawl,
     "gleif": gleif,
     "opencorporates": opencorporates,
     "sec_edgar": sec_edgar,
@@ -629,6 +727,7 @@ BACKEND_KEYS = {
     "x": "X_BEARER_TOKEN",
     "reddit": "REDDIT_CLIENT_ID",
     "bluesky": "BLUESKY_APP_PASSWORD",
+    "socialcrawl": "SOCIALCRAWL_API_KEY",
 }
 
 

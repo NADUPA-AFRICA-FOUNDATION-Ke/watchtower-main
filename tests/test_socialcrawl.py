@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+
+from core.fetch import Fetcher
+from core.sources import SourceError, SourceSkipped, socialcrawl
+
+
+def _fetcher(handler) -> Fetcher:
+    return Fetcher("watchtower-test/0.1", delay=0,
+                   transport=httpx.MockTransport(handler))
+
+
+def test_socialcrawl_maps_unified_results(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["x-api-key"] == "sc_test"
+        assert request.url.params["query"] == "mpesa scam"
+        assert request.url.params["lookback_days"] == "7"
+        return httpx.Response(200, json={
+            "success": True,
+            "credits_used": 20,
+            "credits_remaining": 80,
+            "request_id": "req_1",
+            "cached": False,
+            "data": {"items": [{
+                "id": "123",
+                "platform": "tiktok",
+                "url": "https://www.tiktok.com/@watch/video/123",
+                "text": "Fake M-Pesa promotion",
+                "author": {"username": "watch"},
+                "engagement": {"likes": 10},
+                "computed": {"language": "en"},
+                "created_at": "2026-08-20T12:00:00Z",
+            }]},
+        })
+
+    items = socialcrawl("mpesa scam", _fetcher(handler), hours=168)
+    assert len(items) == 1
+    assert items[0].source == "socialcrawl:tiktok"
+    assert items[0].source_type == "social"
+    assert items[0].author == "watch"
+    assert items[0].lang == "en"
+    assert items[0].raw_meta["credits_used"] == 20
+    assert items[0].raw_meta["engagement"] == {"likes": 10}
+
+
+def test_socialcrawl_requires_key(monkeypatch):
+    monkeypatch.delenv("SOCIALCRAWL_API_KEY", raising=False)
+    with pytest.raises(SourceSkipped, match="SOCIALCRAWL_API_KEY"):
+        socialcrawl("query", _fetcher(lambda request: httpx.Response(500)))
+
+
+def test_socialcrawl_rejects_bad_payload(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    fetcher = _fetcher(lambda request: httpx.Response(200, text="not json"))
+    with pytest.raises(SourceError, match="not valid JSON"):
+        socialcrawl("query", fetcher)
+
