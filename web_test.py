@@ -414,6 +414,9 @@ def main():
                 {"source", "stage", "scored", "done", "failed"} <= js_events)
 
     ok &= check("the sweep request carries the save flag", "save:" in js)
+    ok &= check("interactive sweeps use fast defaults",
+                not re.search(r'id="fetch-bodies"[^>]*checked', html)
+                and "limit: 20" in js)
     # Source-controlled text (titles, URL slugs, entity names) has no spaces to
     # wrap at. Without these the longest token sets the column width and the
     # whole page scrolls sideways — worst at 380px. See the note in style.css.
@@ -466,6 +469,10 @@ def main():
     ok &= check("system status is visible and expandable",
                 'id="system-status"' in html and 'id="status-details"' in html
                 and 'id="status-toggle"' in html)
+    ok &= check("optional integrations are summarized instead of listed as failures",
+                "optional integration" in js
+                and "unavailable.map" not in js
+                and "Ready ·" in js)
     radios = re.findall(r'<button[^>]+role="radio"[^>]*>', html)
     ok &= check("every custom radio declares its accessibility state",
                 radios and all('aria-checked=' in radio for radio in radios))

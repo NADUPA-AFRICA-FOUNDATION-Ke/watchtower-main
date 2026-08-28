@@ -33,18 +33,20 @@ async function init() {
   capabilities = data;
 
   const unavailable = data.sources.filter((s) => s.available === false);
+  const availableCount = data.sources.length - unavailable.length;
   const statusDetails = $("#status-details");
   statusDetails.replaceChildren(
-    el("li", null, `${data.sources.length - unavailable.length} of ${data.sources.length} sources available`),
+    el("li", null, `${availableCount} sources ready`),
+    ...(unavailable.length ? [el("li", null,
+      `${unavailable.length} optional integration${unavailable.length === 1 ? "" : "s"} not configured`)] : []),
     el("li", null, data.ai_available
-      ? `Model scoring available (${data.ai_provider})` : "Model scoring unavailable — keyword ranking only"),
+      ? `Model-assisted ranking ready (${data.ai_provider})` : "Using built-in keyword ranking"),
     el("li", null, data.ephemeral_storage
-      ? "Temporary storage — saving and analyst verdicts are disabled" : "Durable local storage available"),
-    ...unavailable.map((s) => el("li", null, `${s.name}: unavailable (${s.key_name || "configuration required"})`)),
+      ? "Session-only mode — saved results and analyst verdicts are unavailable"
+      : "Saved results and analyst verdicts are ready"),
   );
-  $("#system-status-summary").textContent = data.ephemeral_storage
-    ? `${unavailable.length} source${unavailable.length === 1 ? "" : "s"} unavailable · temporary storage`
-    : `${unavailable.length} source${unavailable.length === 1 ? "" : "s"} unavailable · storage ready`;
+  $("#system-status-summary").textContent =
+    `Ready · ${availableCount} source${availableCount === 1 ? "" : "s"} active`;
 
   const box = $("#sources");
   const sanctionsBox = $("#sanctions-source");
@@ -222,6 +224,8 @@ function startSweep(q) {
     sources: [...selected].join(","),
     use_ai: $("#use-ai").checked,
     fetch_bodies: $("#fetch-bodies").checked,
+    // Fast interactive default; deep CLI runs can still request more.
+    limit: 20,
     // Off by default, same as the API. The Archive tab is empty until this is
     // ticked, so it's the only way to populate it from the browser.
     save: $("#keep").checked,

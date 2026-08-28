@@ -64,13 +64,11 @@ DATA_DIR = (
 )
 EPHEMERAL = SERVERLESS and not _EXPLICIT_DATA_DIR
 
-# Wall-clock ceiling for one sweep. A serverless host kills the request at a
-# fixed limit with no chance to explain itself, so finish a few seconds early
-# and report which sources didn't make it. Unset (no limit) off serverless,
-# where a 60s sweep is fine. Keep this below the platform's own timeout —
-# vercel.json sets maxDuration to 300, so 270 leaves room to return.
+# Wall-clock ceiling for an interactive sweep. A retrying source must not hold
+# the browser open for a minute. Deep CLI research remains unbounded, and a
+# deployment can raise this explicitly when coverage matters more than speed.
 SWEEP_BUDGET = (
-    float(os.environ.get("WATCHTOWER_SWEEP_BUDGET", "270" if SERVERLESS else "0"))
+    float(os.environ.get("WATCHTOWER_SWEEP_BUDGET", "30"))
     or None
 )
 
