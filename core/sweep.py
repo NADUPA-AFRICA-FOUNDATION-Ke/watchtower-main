@@ -270,7 +270,7 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
     # --- 3. fetch bodies ----------------------------------------------
     needs_body = [i for i in deduped
                   if fetch_bodies and len(i.text) < 400
-                  and i.source_type not in ("watchlist", "reference")]
+                  and i.source_type not in ("watchlist", "reference", "social")]
     if needs_body and time_left() <= 1.0:
         result.skipped["article bodies"] = "exceeded the sweep time budget"
         needs_body = []

@@ -122,7 +122,8 @@ class Fetcher:
     # ---------- fetching ----------
 
     def get(self, url: str, retries: int = 2, api: bool = False,
-            headers: dict | None = None) -> FetchResult:
+            headers: dict | None = None,
+            timeout: float | None = None) -> FetchResult:
         """`api=True` skips the robots check. Use it only for the declared
         public API endpoints in core/sources.py.
 
@@ -152,7 +153,10 @@ class Fetcher:
         for attempt in range(retries + 1):
             self._throttle(domain)
             try:
-                r = self.client.get(url, headers=headers or None)
+                request_options = {"headers": headers or None}
+                if timeout is not None:
+                    request_options["timeout"] = timeout
+                r = self.client.get(url, **request_options)
             except httpx.HTTPError as e:
                 if attempt == retries:
                     return FetchResult(url, 0, error=f"{type(e).__name__}: {e}")

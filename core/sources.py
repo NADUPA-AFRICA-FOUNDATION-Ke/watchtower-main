@@ -641,7 +641,10 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
         "query": query,
         "lookback_days": lookback_days,
     })
-    res = fetcher.get(url, api=True, headers={
+    # Universal Search is a paid, multi-source fan-out and can legitimately
+    # take longer than an ordinary API call. Never retry it automatically: a
+    # timed-out response may still have completed and settled credits upstream.
+    res = fetcher.get(url, api=True, retries=0, timeout=120, headers={
         "x-api-key": key,
         "Accept": "application/json",
     })
@@ -660,8 +663,9 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
         for key in ("request_id", "credits_used", "credits_remaining", "cached")
         if payload.get(key) is not None
     }
+    rows = _socialcrawl_items(payload)
     out = []
-    for row in _socialcrawl_items(payload)[:limit]:
+    for row in rows[:limit]:
         author = row.get("author") or {}
         engagement = row.get("engagement") or {}
         computed = row.get("computed") or row.get("metadata") or {}
@@ -695,6 +699,10 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
             lang=str(_first(computed, "language", default=_first(row, "language"))),
             raw_meta=raw_meta,
         ))
+    if rows and not out:
+        raise SourceError(
+            f"SocialCrawl returned {len(rows)} result(s), but none had a usable URL"
+        )
     return out
 
 

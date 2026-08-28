@@ -61,3 +61,27 @@ def test_socialcrawl_rejects_bad_payload(monkeypatch):
     with pytest.raises(SourceError, match="not valid JSON"):
         socialcrawl("query", fetcher)
 
+
+def test_socialcrawl_does_not_retry_a_paid_request(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, text="upstream unavailable")
+
+    with pytest.raises(SourceError):
+        socialcrawl("query", _fetcher(handler))
+    assert calls == 1
+
+
+def test_socialcrawl_reports_unusable_paid_results(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    fetcher = _fetcher(lambda request: httpx.Response(200, json={
+        "success": True,
+        "credits_used": 20,
+        "data": {"items": [{"source": "reddit", "title": "missing URL"}]},
+    }))
+    with pytest.raises(SourceError, match="none had a usable URL"):
+        socialcrawl("query", fetcher)
