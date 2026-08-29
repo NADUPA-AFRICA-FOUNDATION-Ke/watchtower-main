@@ -526,10 +526,10 @@ def run_sweep(
                 fetch_bodies=fetch_bodies,
                 enricher=enricher,
                 max_enrich=max_ai,
-                # Do not abandon a paid SocialCrawl call after it has begun:
-                # the provider may still settle credits while its results are
-                # discarded locally. Other interactive sweeps stay bounded.
-                budget=None if "socialcrawl" in backends else SWEEP_BUDGET,
+                budget=SWEEP_BUDGET,
+                # Do not discard a paid call after it starts. Only this future
+                # may exceed the deadline; all other work remains bounded.
+                protected_backends={"socialcrawl"} & set(backends),
                 progress=events.put,
             )
             holder["result"] = result

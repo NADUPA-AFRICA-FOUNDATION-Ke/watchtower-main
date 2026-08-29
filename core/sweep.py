@@ -149,11 +149,13 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
           backends: list[str] | None = None, limit: int = 40,
           fetch_bodies: bool = True, enricher: Enricher | None = None,
           max_enrich: int = 25, workers: int = 6, budget: float | None = None,
+          protected_backends: set[str] | None = None,
           progress=lambda event: None) -> SweepResult:
     """`progress` receives dicts, not strings, so callers can render them
     however they like: a CLI line, an SSE frame, a log record."""
 
     backends = backends or DEFAULT_BACKENDS
+    protected_backends = protected_backends or set()
     result = SweepResult(query=query)
     terms = _terms(query)
 
@@ -199,6 +201,20 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
             done_iter = list(as_completed(futures, timeout=wait_for))
         except FuturesTimeout:
             done_iter = [f for f in futures if f.done()]
+        # A paid request may settle upstream even if we stop waiting locally.
+        # Let only explicitly protected paid futures finish so their results
+        # are not discarded; the deadline still applies to every other source
+        # and to all downstream body-fetch/model-scoring work.
+        protected_futures = [
+            future for future, name in futures.items()
+            if name in protected_backends and future not in done_iter
+        ]
+        for future in protected_futures:
+            try:
+                future.result()
+            except Exception:
+                pass
+            done_iter.append(future)
         for fut in futures:
             name = futures[fut]
             if fut not in done_iter:

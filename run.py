@@ -29,6 +29,8 @@ def load_env(path: Path = None) -> None:
     shell or by CI must win over a stale file on disk. Silent when absent —
     every key here is optional and the tool runs without all of them.
     """
+    if os.environ.get("WATCHTOWER_SKIP_DOTENV") == "1":
+        return
     path = path or Path(__file__).parent / ".env"
     if not path.is_file():
         return

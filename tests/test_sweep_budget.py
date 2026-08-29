@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+import time
+
+import httpx
+
+from core.fetch import Fetcher
+from core.models import Item
+from core.sources import BACKENDS
+from core.sweep import sweep
+
+
+def test_paid_backend_finishes_without_unbounding_other_sources(monkeypatch):
+    def paid(query, fetcher, hours=72, limit=20):
+        time.sleep(0.05)
+        return [Item(
+            url="https://social.example/post/1",
+            source="paid", source_type="social",
+            title="target result", text="target result",
+        )]
+
+    def unrelated(query, fetcher, hours=72, limit=20):
+        time.sleep(0.20)
+        return []
+
+    monkeypatch.setitem(BACKENDS, "paid_test", paid)
+    monkeypatch.setitem(BACKENDS, "slow_test", unrelated)
+    fetcher = Fetcher(
+        "watchtower-test/0.1", delay=0,
+        transport=httpx.MockTransport(lambda request: httpx.Response(404)),
+    )
+    started = time.monotonic()
+    result = sweep(
+        "target", fetcher,
+        backends=["paid_test", "slow_test"],
+        fetch_bodies=False,
+        budget=0.01,
+        protected_backends={"paid_test"},
+    )
+    elapsed = time.monotonic() - started
+    fetcher.close()
+
+    assert [item.url for item in result.items] == ["https://social.example/post/1"]
+    assert result.per_source["paid_test"] == 1
+    assert result.skipped["slow_test"] == "exceeded the sweep time budget"
+    assert elapsed < 0.15
