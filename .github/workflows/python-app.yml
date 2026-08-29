@@ -53,5 +53,6 @@ jobs:
             --statistics
 
       - name: Run tests
+        working-directory: ${{ github.workspace }}
         run: |
           pytest -v
