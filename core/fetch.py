@@ -182,8 +182,6 @@ class Fetcher:
                 backoff = max(backoff * 2, wait * 2)
                 continue
 
-            if r.status_code != 200:
-                return FetchResult(url, r.status_code, error=f"HTTP {r.status_code}")
             ctype = (r.headers.get("content-type") or "").split(";")[0].strip()
             # Only decode to text when it plausibly is text. A PDF or an image
             # keeps its bytes and leaves `html` empty, so nothing downstream
@@ -193,6 +191,18 @@ class Fetcher:
                        or ctype in ("application/json", "application/xml",
                                     "application/rss+xml", "application/atom+xml",
                                     "application/xhtml+xml", "application/javascript"))
+            if r.status_code != 200:
+                # Preserve structured/text error bodies so an API adapter can
+                # surface an actionable provider message (for example a 402
+                # credit balance) instead of only "HTTP 402". Binary error
+                # pages remain undecoded.
+                return FetchResult(
+                    url, r.status_code,
+                    html=r.text if textual else "",
+                    content=r.content,
+                    content_type=ctype,
+                    error=f"HTTP {r.status_code}",
+                )
             return FetchResult(url, 200,
                                html=r.text if textual else "",
                                content=r.content, content_type=ctype)

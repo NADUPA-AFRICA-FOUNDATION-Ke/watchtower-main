@@ -85,3 +85,24 @@ def test_socialcrawl_reports_unusable_paid_results(monkeypatch):
     }))
     with pytest.raises(SourceError, match="none had a usable URL"):
         socialcrawl("query", fetcher)
+
+
+def test_socialcrawl_surfaces_402_credit_details(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    fetcher = _fetcher(lambda request: httpx.Response(402, json={
+        "success": False,
+        "error": {
+            "type": "INSUFFICIENT_CREDITS",
+            "message": "Your account has 0 credits remaining. This endpoint requires 20 credits.",
+            "status": 402,
+        },
+        "credits_used": 0,
+        "credits_remaining": 0,
+        "request_id": "req-test",
+    }))
+    with pytest.raises(SourceError) as caught:
+        socialcrawl("query", fetcher)
+    message = str(caught.value)
+    assert "0 credits remaining" in message
+    assert "requires 20 credits" in message
+    assert "credits used: 0" in message

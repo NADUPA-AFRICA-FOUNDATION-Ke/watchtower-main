@@ -624,6 +624,25 @@ def _first(mapping: dict, *keys, default=""):
     return default
 
 
+def _socialcrawl_error(res) -> str:
+    """Return the provider's actionable error without exposing credentials."""
+    try:
+        payload = json.loads(res.html)
+    except (json.JSONDecodeError, TypeError):
+        return res.error or f"HTTP {res.status}"
+    error = payload.get("error") or {}
+    if isinstance(error, dict):
+        kind = str(error.get("type") or "").replace("_", " ").lower()
+        message = str(error.get("message") or "").strip()
+    else:
+        kind, message = "", str(error).strip()
+    detail = message or kind or res.error or f"HTTP {res.status}"
+    credits_used = payload.get("credits_used")
+    if credits_used is not None:
+        detail += f" (credits used: {credits_used})"
+    return detail
+
+
 def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
                 limit: int = 20) -> list[Item]:
     """Search public posts across SocialCrawl's Universal Search API.
@@ -649,7 +668,7 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
         "Accept": "application/json",
     })
     if not res.ok:
-        _fail(res)
+        raise SourceError(_socialcrawl_error(res))
     try:
         payload = json.loads(res.html)
     except json.JSONDecodeError:
