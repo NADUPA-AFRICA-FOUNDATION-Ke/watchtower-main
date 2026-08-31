@@ -1,0 +1,87 @@
+name: watchtower-osint
+
+services:
+  searxng:
+    image: searxng/searxng@sha256:b36af7984b87191b595bc5301418ed6432c047668a4547ab531a7439b816fac3
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./services/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env}"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  rsshub:
+    image: diygod/rsshub@sha256:fb2b2a471b4c31e35ee843b0450f4eaba7b0aa72fef8e4ade49f145313686be3
+    ports:
+      - "127.0.0.1:1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: "300"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:1200/"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  maigret:
+    image: soxoj/maigret@sha256:9f86f9cf7fe91a597d6c6527d277b109b242d403c6c072d65db8d37af8fdeacc
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      PORT: "5000"
+      FLASK_HOST: 0.0.0.0
+    volumes:
+      - maigret-reports:/app/reports
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=4)"
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  spiderfoot:
+    image: watchtower-spiderfoot:0f815a2
+    build:
+      context: https://github.com/smicallef/spiderfoot.git#0f815a203afebf05c98b605dba5cf0475a0ee5fd
+    ports:
+      - "127.0.0.1:5001:5001"
+    volumes:
+      - spiderfoot-data:/var/lib/spiderfoot
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/', timeout=4)"
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+volumes:
+  maigret-reports:
+  spiderfoot-data:
