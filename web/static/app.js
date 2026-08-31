@@ -19,6 +19,7 @@ let selected = new Set();
 let hours = 72;
 let stream = null;
 let capabilities = {};
+let previewUrls = new Set();
 
 /* ------------------------------------------------------------ bootstrap */
 
@@ -65,7 +66,11 @@ async function init() {
   const box = $("#sources");
   const sanctionsBox = $("#sanctions-source");
   const sanctionsNote = $("#sanctions-note");
-  data.sources.forEach((s) => {
+  // Investigation providers (DNS, RDAP, CT, threat intelligence, etc.) pivot
+  // from domains and belong to the Discover workflow. They used to appear as
+  // Monitor chips even though /api/sweep cannot execute them; selecting one
+  // made the entire EventSource request fail with "unknown source".
+  data.sources.filter((s) => s.surface !== "investigation").forEach((s) => {
     const isSanctions = s.name === "opensanctions";
     const chip = el("button", "chip", isSanctions ? "OpenSanctions" : s.name);
     chip.type = "button";
@@ -232,6 +237,9 @@ function startSweep(q) {
   $("#trace").hidden = false;
   $("#trace-title").textContent = `Monitoring "${q}"`;
   $("#trace-stage").textContent = "";
+  previewUrls = new Set();
+  $("#findings").replaceChildren();
+  $("#summary").replaceChildren();
 
   const lanes = $("#lanes");
   lanes.replaceChildren();
@@ -280,6 +288,7 @@ function startSweep(q) {
     lane.querySelector(".lane-count").textContent =
       d.error ? "failed" : d.skipped ? "off" : d.count;
     if (d.reason || d.skipped) lane.title = d.reason || d.skipped;
+    showPreviews(d.preview || []);
   });
 
   stream.addEventListener("stage", (ev) => {
@@ -322,6 +331,22 @@ function finish() {
   $("#trace-title").textContent = "Sources";
 }
 
+function showPreviews(items) {
+  const fresh = items.filter((item) => item.url && !previewUrls.has(item.url));
+  if (!fresh.length) return;
+  fresh.forEach((item) => previewUrls.add(item.url));
+  $("#results").hidden = false;
+  $("#empty").hidden = true;
+  const summary = $("#summary");
+  if (!summary.querySelector(".live-preview")) {
+    summary.replaceChildren(el(
+      "span", "warn live-preview",
+      "Live findings · provisional keyword ratings while remaining sources finish"
+    ));
+  }
+  fresh.forEach((item) => $("#findings").append(card(item)));
+}
+
 $("#cancel-sweep").onclick = () => {
   if (!stream) return;
   stream.close();
@@ -345,6 +370,11 @@ function card(item) {
 
   const top = el("div", "card-top");
   top.append(gauge(item.band), el("span", "score", item.relevance));
+  if (item.provisional) {
+    const provisional = el("span", "flag", "provisional");
+    provisional.title = "Fast keyword rating; final rating may change after analysis.";
+    top.append(provisional);
+  }
   c.append(top);
 
   const h = el("h3");

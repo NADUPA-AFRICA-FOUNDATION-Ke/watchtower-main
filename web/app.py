@@ -195,6 +195,7 @@ def list_sources():
             "capabilities": list(provider.capabilities()),
             "status": "configured",
             "detail": "No commercial API key required; verified when queried",
+            "surface": "investigation",
         }
         for provider in default_providers()
     ]
@@ -205,6 +206,7 @@ def list_sources():
             "needs_key": n in BACKEND_KEYS,
             "available": has_credentials(n),
             "key_name": BACKEND_KEYS.get(n, ""),
+            "surface": "monitor",
         }
         for n in BACKENDS
     ]

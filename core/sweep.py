@@ -129,6 +129,32 @@ def _adjust(score: int, item: Item) -> int:
     return max(0, min(100, int(round(adjusted))))
 
 
+def _preview(item: Item, terms: list[str]) -> dict:
+    """Small JSON-safe finding for live delivery before final processing.
+
+    This score is deliberately labelled provisional by the UI: article-body
+    extraction, cross-source deduplication and model scoring happen later.
+    """
+    relevance = _adjust(_keyword_score(item, terms), item)
+    band_name = ("HIGH" if relevance >= 80 else "MED" if relevance >= 60
+                 else "LOW" if relevance >= 30 else "WEAK")
+    return {
+        "url": item.url,
+        "title": item.title or "(untitled)",
+        "source": item.source,
+        "source_type": item.source_type,
+        "published_at": item.published_at,
+        "author": item.author,
+        "text": (item.text or "")[:320],
+        "summary": "",
+        "categories": [],
+        "raw_meta": item.raw_meta,
+        "relevance": relevance,
+        "band": band_name,
+        "provisional": True,
+    }
+
+
 def _diversify(items: list[Item], cap_per_domain: int = 3) -> list[Item]:
     """Stop one prolific outlet burying everything else. Syndicated wire copy
     means a single story can occupy your entire top ten otherwise."""
@@ -223,7 +249,9 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
                     collected.extend(got)
                     result.per_source[name] = len(got)
                     progress({"type": "source", "name": name,
-                              "count": len(got)})
+                              "count": len(got),
+                              "preview": [_preview(item, terms)
+                                          for item in got[:5]]})
         except FuturesTimeout:
             pass
         # A paid request may settle upstream even if we stop waiting locally.
@@ -271,7 +299,9 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
             else:
                 collected.extend(got)
                 result.per_source[name] = len(got)
-                progress({"type": "source", "name": name, "count": len(got)})
+                progress({"type": "source", "name": name, "count": len(got),
+                          "preview": [_preview(item, terms)
+                                      for item in got[:5]]})
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
 

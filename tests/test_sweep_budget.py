@@ -41,6 +41,31 @@ def test_source_progress_is_emitted_before_slowest_source_finishes(monkeypatch):
     assert progress_saw_slow_finished == [False]
 
 
+def test_source_progress_includes_json_safe_provisional_ratings(monkeypatch):
+    def source(query, fetcher, hours=72, limit=20):
+        return [Item(
+            url="https://news.example/result",
+            source="preview_test", source_type="news",
+            title="Target fraud investigation", text="Target fraud evidence",
+        )]
+
+    monkeypatch.setitem(BACKENDS, "preview_test", source)
+    events = []
+    fetcher = Fetcher(
+        "watchtower-test/0.1", delay=0,
+        transport=httpx.MockTransport(lambda request: httpx.Response(404)),
+    )
+    sweep("target fraud", fetcher, backends=["preview_test"],
+          fetch_bodies=False, progress=events.append)
+    fetcher.close()
+
+    event = next(event for event in events if event.get("name") == "preview_test")
+    preview = event["preview"][0]
+    assert preview["source"] == "preview_test"
+    assert preview["band"] in {"HIGH", "MED", "LOW", "WEAK"}
+    assert isinstance(preview["relevance"], int)
+
+
 def test_paid_backend_finishes_without_unbounding_other_sources(monkeypatch):
     def paid(query, fetcher, hours=72, limit=20):
         time.sleep(0.05)
