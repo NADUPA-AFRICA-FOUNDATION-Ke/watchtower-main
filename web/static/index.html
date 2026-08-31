@@ -9,33 +9,42 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23A82C22'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
+<a class="skip-link" href="#workspace-main">Skip to workspace</a>
+
 <header class="rail">
   <div class="rail-mark">
-    <span class="pip" aria-hidden="true"></span>
-    <span class="rail-name" id="rail-name">WATCHTOWER</span>
+    <span class="brand-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4.5 7.2v5.6c0 4.4 3.2 7.2 7.5 8.2 4.3-1 7.5-3.8 7.5-8.2V7.2L12 3Z"/><path d="m8.8 12.2 2.1 2.1 4.4-4.6"/></svg>
+    </span>
+    <span><span class="rail-name" id="rail-name">WATCHTOWER</span><span class="brand-sub">Intelligence workspace</span></span>
   </div>
   <nav class="rail-nav">
     <div class="side-group" data-side="watchtower">
-      <span class="side-label">watchtower</span>
-      <button class="tab is-on" data-view="sweep" data-side="watchtower" aria-current="page">Monitor</button>
-      <button class="tab" data-view="archive" data-side="watchtower">Saved results</button>
+      <span class="side-label">Research</span>
+      <button class="tab is-on" data-view="sweep" data-side="watchtower" aria-current="page"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>Monitor</span></button>
+      <button class="tab" data-view="archive" data-side="watchtower"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v13H4zM3 4h18v3H3z"/><path d="M9 11h6"/></svg><span>Saved results</span></button>
     </div>
     <div class="side-group" data-side="scamscan">
-      <span class="side-label">scamscan</span>
-      <button class="tab" data-view="discover" data-side="scamscan">Find scam sites</button>
-      <button class="tab" data-view="queue" data-side="scamscan">Review queue</button>
-      <button class="tab" data-view="score" data-side="scamscan">Quick score</button>
+      <span class="side-label">Investigations</span>
+      <button class="tab" data-view="discover" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/></svg><span>Find scam sites</span></button>
+      <button class="tab" data-view="queue" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg><span>Review queue</span></button>
+      <button class="tab" data-view="score" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8"/></svg><span>Quick score</span></button>
     </div>
   </nav>
-  <div class="rail-status" id="ai-status" title="Relevance scoring status"></div>
+  <div class="rail-foot"><span class="status-dot" aria-hidden="true"></span><span class="rail-status" id="ai-status" title="Relevance scoring status">Checking system</span></div>
 </header>
 
-<main>
+<main id="workspace-main">
+
+<header class="workspace-head">
+  <div><span class="workspace-kicker">Threat intelligence platform</span><strong>Investigation workspace</strong></div>
+  <div class="workspace-actions"><span class="privacy-pill"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4 2.8 7.1 7 8.6 4.2-1.5 7-4.6 7-8.6V6l-7-3Z"/></svg>Private by default</span></div>
+</header>
 
 <section class="system-status" id="system-status" aria-labelledby="system-status-title">
   <div>
@@ -54,6 +63,40 @@
     <div><span class="eyebrow">Watchtower / Monitor</span><h1>Monitor current sources</h1>
     <p>Search news, regulatory, reference and selected social sources for a topic.</p></div>
   </header>
+
+  <section class="feature-overview" aria-label="Watchtower capabilities">
+    <article class="feature-card feature-primary">
+      <span class="feature-label">Unified intelligence</span>
+      <h2>Find the signal.<br>Follow the evidence.</h2>
+      <p>Search public sources, connect infrastructure, screen entities and move credible findings into analyst review.</p>
+      <div class="feature-actions">
+        <button type="button" class="feature-cta" data-focus-search>Start monitoring</button>
+        <button type="button" class="feature-link" data-open-view="discover">Open discovery <span aria-hidden="true">→</span></button>
+      </div>
+      <div class="signal-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><span></span></div>
+    </article>
+    <article class="feature-card capability-card">
+      <span class="capability-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 17 9 12l4 3 7-8"/><path d="M15 7h5v5"/></svg></span>
+      <span class="feature-label">Live coverage</span>
+      <h3>Multi-source monitoring</h3>
+      <p>News, regulators, reference data and social discovery in one sweep.</p>
+      <button type="button" class="card-link" data-focus-search>Configure sweep <span aria-hidden="true">↗</span></button>
+    </article>
+    <article class="feature-card capability-card feature-dark">
+      <span class="capability-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="12" cy="17" r="3"/><path d="m9.5 8.5 1.7 5.6m3.3-5.6-1.7 5.6"/></svg></span>
+      <span class="feature-label">Evidence graph</span>
+      <h3>Connect hidden campaigns</h3>
+      <p>Correlate domains, certificates, phone numbers and payment identifiers.</p>
+      <button type="button" class="card-link" data-open-view="discover">Investigate a brand <span aria-hidden="true">↗</span></button>
+    </article>
+    <article class="feature-card capability-card feature-wide">
+      <div><span class="feature-label">Analyst workflow</span><h3>From discovery to defensible verdict</h3><p>Prioritize findings, inspect the scoring evidence and record decisions without losing context.</p></div>
+      <div class="workflow-steps" aria-label="Workflow: collect, correlate, review">
+        <span><b>01</b> Collect</span><i></i><span><b>02</b> Correlate</span><i></i><span><b>03</b> Review</span>
+      </div>
+      <button type="button" class="card-link" data-open-view="queue">Open review queue <span aria-hidden="true">↗</span></button>
+    </article>
+  </section>
 
   <form class="console" id="sweep-form" autocomplete="off">
     <label class="field-label" for="q">What are you looking for</label>

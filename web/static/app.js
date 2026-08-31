@@ -185,6 +185,19 @@ function openHashView() {
 }
 window.addEventListener("hashchange", openHashView);
 
+document.querySelectorAll("[data-open-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelector(`.tab[data-view="${button.dataset.openView}"]`)?.click();
+  });
+});
+
+document.querySelectorAll("[data-focus-search]").forEach((button) => {
+  button.addEventListener("click", () => {
+    $("#sweep-form").scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => $("#q").focus(), 250);
+  });
+});
+
 /* ----------------------------------------------------------------- sweep */
 
 $("#sweep-form").onsubmit = (e) => {
