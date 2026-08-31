@@ -135,6 +135,11 @@ class DiscoveryOrchestrator:
             absorb(run)
 
         domains = [e for e in entities.values() if e.entity_type == "domain"][:self.max_domains]
+        # Only domains returned by discovery (and later reverse pivots) are
+        # investigation candidates. Domains extracted from fetched page assets
+        # such as fonts, analytics and CDNs remain useful graph evidence but
+        # must not flood the candidate list or bypass the requested limit.
+        candidate_domain_ids = {domain.id for domain in domains}
         enrichers = [p for p in self.providers if set(p.capabilities()) & {
             "registration", "A", "live_certificate", "urlhaus", "threatfox"
         }]
@@ -253,6 +258,7 @@ class DiscoveryOrchestrator:
                 if target.entity_type != "domain" or target.id in entities:
                     continue
                 entities[target.id] = target
+                candidate_domain_ids.add(target.id)
                 ev = Evidence(iid, target.id, web_provider.name,
                               "reverse_pivot", target.canonical_value, None,
                               {"pivot_entity": entity.canonical_value}, 0.6)
@@ -354,7 +360,8 @@ class DiscoveryOrchestrator:
                     "url": f"https://{domain.canonical_value}/",
                     **scored.get(domain.id, {}),
                 }
-                for domain in entities.values() if domain.entity_type == "domain"
+                for domain in entities.values()
+                if domain.entity_type == "domain" and domain.id in candidate_domain_ids
             ],
             "coverage": {
                 "configured": len(requested), "attempted": len({h.provider for h in health}),

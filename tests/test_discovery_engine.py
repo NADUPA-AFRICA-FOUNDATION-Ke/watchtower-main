@@ -20,10 +20,12 @@ from watchtower.discovery.providers import (
     CertificateTransparencyProvider,
     CommonCrawlProvider,
     DNSProvider,
+    DuckDuckGoProvider,
     RDAPProvider,
     ThreatFoxProvider,
     URLhausProvider,
 )
+from watchtower.discovery.cache import ProviderCache
 from watchtower.discovery.safe_fetch import (
     SafeFetchResult,
     SafeFetcher,
@@ -87,6 +89,34 @@ def test_whatsapp_url_variants_normalize_to_one_account():
     values = {(item.entity_type, item.canonical_value) for item in entities}
     assert ("phone_number", "+254712345678") in values
     assert ("social_account", "whatsapp:+254712345678") in values
+
+
+def test_web_discovery_falls_back_and_does_not_cache_empty_searches(monkeypatch):
+    import osint_discovery
+
+    calls = []
+
+    def search(query, limit):
+        calls.append(query)
+        if "scam OR fraud OR fake" not in query:
+            return []
+        return [{
+            "url": "https://fuliza-help.example/apply",
+            "title": "Fuliza help",
+            "summary": "Apply through WhatsApp",
+        }]
+
+    monkeypatch.setattr(osint_discovery, "search_duckduckgo", search)
+    provider = DuckDuckGoProvider(ProviderCache())
+    context = DiscoveryContext("i", "Fuliza", "Fuliza", (), ("fuliza",), 5)
+
+    first = asyncio.run(provider.discover(context))
+    second = asyncio.run(provider.discover(context))
+
+    assert any(entity.canonical_value == "fuliza-help.example"
+               for entity in first.entities)
+    assert second.entities
+    assert calls.count("Fuliza") == 2
 
 
 def test_ct_provider_creates_certificate_edges_from_fixture():

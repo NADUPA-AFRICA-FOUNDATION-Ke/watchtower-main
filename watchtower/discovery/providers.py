@@ -109,7 +109,9 @@ class DuckDuckGoProvider(DiscoveryProvider):
 
     async def _search(self, query, limit):
         import osint_discovery
-        key = f"{query}|{limit}"
+        # Version the key so empty results cached by the retired
+        # ``duckduckgo-search`` package cannot suppress the replacement client.
+        key = f"ddgs-v2|{query}|{limit}"
         cached = self.cache.get(self.name, key)
         if cached is not None:
             return cached
@@ -120,7 +122,11 @@ class DuckDuckGoProvider(DiscoveryProvider):
             if wait > 0: await asyncio.sleep(wait)
             rows = await asyncio.to_thread(osint_discovery.search_duckduckgo, query, limit)
             self._last_request = time.monotonic()
-        self.cache.put(self.name, key, rows, 21600)
+        # An empty unauthenticated-search response is commonly a transient
+        # backend block, not a durable fact. Caching it made investigations
+        # return nothing for six hours after one bad response.
+        if rows:
+            self.cache.put(self.name, key, rows, 21600)
         return rows
 
     def capabilities(self):
@@ -129,7 +135,22 @@ class DuckDuckGoProvider(DiscoveryProvider):
     async def discover(self, context):
         attempted = utcnow()
         try:
-            rows = await self._search(context.query, context.max_results)
+            queries = list(dict.fromkeys([
+                context.query,
+                f'"{context.brand}" scam OR fraud OR fake',
+                f'"{context.brand}" loan WhatsApp',
+            ]))
+            rows = []
+            seen_urls = set()
+            for query in queries:
+                for row in await self._search(query, context.max_results):
+                    url = row.get("url", "")
+                    if not url or url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    rows.append(row)
+                if len(rows) >= context.max_results:
+                    break
         except Exception as exc:
             return ProviderRun(SourceHealth(
                 self.name, "provider_error", tuple(self.capabilities()),
@@ -138,7 +159,7 @@ class DuckDuckGoProvider(DiscoveryProvider):
         run = ProviderRun(SourceHealth(
             self.name, "operational", tuple(self.capabilities()), last_attempt=attempted
         ))
-        for row in rows:
+        for row in rows[:context.max_results]:
             item = _domain_result(
                 self, context, row.get("url", ""), row.get("url", ""),
                 {"title": row.get("title", ""), "snippet": row.get("summary", "")},
@@ -225,9 +246,19 @@ class CertificateTransparencyProvider(HttpProvider):
                 key = f"term:{term}"
                 rows = self.cache.get(self.name, key)
                 if rows is None:
-                    rows = await self._json(
-                        "GET", "https://crt.sh/", params={"q": f"%{term}%", "output": "json"}
-                    )
+                    try:
+                        rows = await self._json(
+                            "GET", "https://crt.sh/",
+                            params={"q": f"%{term}%", "output": "json"},
+                        )
+                    except httpx.HTTPStatusError as exc:
+                        # crt.sh uses 404 for a valid query with no matching
+                        # identities. That is a searched zero, not a broken
+                        # provider, and should not poison the full run status.
+                        if exc.response.status_code == 404:
+                            rows = []
+                        else:
+                            raise
                     self.cache.put(self.name, key, rows, 30 * 86400)
                 for row in rows[:200]:
                     cert_value = str(row.get("min_cert_id") or row.get("id") or
