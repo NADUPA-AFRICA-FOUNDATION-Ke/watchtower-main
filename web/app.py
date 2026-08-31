@@ -57,6 +57,17 @@ _EXPLICIT_DATA_DIR = os.environ.get("WATCHTOWER_DATA_DIR")
 SERVERLESS = bool(
     os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
 )
+HOSTED = bool(
+    SERVERLESS
+    or os.environ.get("RAILWAY_ENVIRONMENT")
+    or os.environ.get("RENDER")
+    or os.environ.get("K_SERVICE")
+    or os.environ.get("FLY_APP_NAME")
+    or os.environ.get("DYNO")
+)
+REQUIRE_AUTH = HOSTED or os.environ.get("WATCHTOWER_REQUIRE_AUTH", "").lower() in {
+    "1", "true", "yes", "on"
+}
 DATA_DIR = (
     Path(_EXPLICIT_DATA_DIR)
     if _EXPLICIT_DATA_DIR
@@ -124,7 +135,10 @@ async def require_password(request, call_next):
     serve 503 rather than quietly exposing it — a deployment that refuses to
     work is recoverable, one that silently runs up a bill is not.
     """
-    if not SERVERLESS:
+    if request.url.path == "/api/healthz":
+        return await call_next(request)
+
+    if not REQUIRE_AUTH:
         return await call_next(request)
 
     if not WT_PASSWORD:
@@ -149,6 +163,12 @@ async def require_password(request, call_next):
             headers={"WWW-Authenticate": 'Basic realm="watchtower"'},
         )
     return await call_next(request)
+
+
+@app.get("/api/healthz", include_in_schema=False)
+def healthz():
+    """Credential-free liveness only; exposes no configuration or data."""
+    return {"status": "ok"}
 
 
 # ------------------------------------------------------------------ meta
@@ -445,6 +465,10 @@ def get_entity_evidence(entity_id: str):
 
 @app.post("/api/entities/{entity_id}/verdict")
 def submit_verdict(entity_id: str, payload: dict = Body(...)):
+    if EPHEMERAL:
+        raise HTTPException(
+            409, "analyst verdicts require durable storage; set WATCHTOWER_DATA_DIR"
+        )
     store = investigation_store()
     try:
         if not store.get("entities", entity_id):
@@ -929,6 +953,10 @@ def scan_url(payload: dict = Body(...)):
     try:
         finding = osint_discovery.fetch_and_analyze_url(url, cfg)
 
+        fetch_error = str(finding.get("summary", ""))
+        if fetch_error.startswith("Error fetching URL:"):
+            raise HTTPException(422, fetch_error.removeprefix("Error fetching URL: "))
+
         # Check for official domain (INSTANT SAFE)
         if finding.get("_is_official"):
             return {
@@ -1018,6 +1046,8 @@ def scan_url(payload: dict = Body(...)):
             "confidence": _compute_confidence(scored),  # Add confidence metric
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"Analysis failed: {str(e)}")
 

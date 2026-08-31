@@ -76,6 +76,14 @@ def main():
                 'data-view="discover"' in r.text
                 and 'id="discover-form"' in r.text
                 and 'id="discover-results"' in r.text)
+    ok &= check("live URL scanning is available from the UI",
+                'id="scan-form"' in r.text and 'id="scan-url"' in r.text)
+    ok &= check("investigation evidence has an accessible detail surface",
+                'id="detail-dialog"' in r.text
+                and 'aria-labelledby="detail-title"' in r.text)
+    ok &= check("archive metrics are visible",
+                all(f'id="stat-{key}"' in r.text
+                    for key in ("total", "enriched", "unalerted", "sources")))
 
     r = client.get("/api/sources")
     body = r.json()
@@ -118,6 +126,8 @@ def main():
     ok &= check("discovery rejects a malformed limit",
                 client.post("/api/discover",
                             json={"brand": "fuliza", "limit": "many"}).status_code == 400)
+    scan = client.post("/api/scan", json={"url": "http://127.0.0.1/private"})
+    ok &= check("live scan rejects private-network targets", scan.status_code == 422)
     ok &= check("blocks path traversal on reports",
                 client.get("/api/report/../config.yaml").status_code == 404)
     r = client.get("/api/archive?q=AND OR")
@@ -236,9 +246,24 @@ def main():
                             auth=("watchtower", "hunter2"),
                             json={"fingerprint": "x", "verdict": "confirmed"})
                       .status_code == 409)
+        ok &= check("ephemeral storage also rejects entity verdicts",
+                    pc.post("/api/entities/entity-x/verdict",
+                            auth=("watchtower", "hunter2"),
+                            json={"verdict": "needs_review"}).status_code == 409)
         ok &= check("ephemeral storage rejects hunts whose findings would be lost",
                     pc.get("/api/scamscan/hunt?topics=1",
                            auth=("watchtower", "hunter2")).status_code == 409)
+
+        os.environ.pop("VERCEL", None)
+        os.environ.pop("WATCHTOWER_PASSWORD", None)
+        os.environ["RAILWAY_ENVIRONMENT"] = "production"
+        prod = importlib.reload(webapp)
+        pc = TestClient(prod.app)
+        ok &= check("Railway deployments also fail closed without a password",
+                    pc.get("/").status_code == 503)
+        ok &= check("host health checks remain credential-free and data-free",
+                    pc.get("/api/healthz").status_code == 200
+                    and pc.get("/api/healthz").json() == {"status": "ok"})
     finally:
         os.environ.clear()
         os.environ.update(saved)
@@ -449,6 +474,16 @@ def main():
                 "ai_provider" in client.get("/api/sources").json())
     for cls in (".lane.skipped", ".summary .warn"):
         ok &= check(f"{cls} is styled", cls in css)
+    ok &= check("every investigation detail endpoint is wired into the UI",
+                all(path in js for path in (
+                    "/api/investigations/${encodeURIComponent(id)}",
+                    "/api/entities/${encodeURIComponent(id)}",
+                    "/api/entities/${encodeURIComponent(id)}/evidence",
+                    "/api/entities/${encodeURIComponent(id)}/verdict",
+                    "/api/campaigns/${encodeURIComponent(id)}",
+                    "/api/scan",
+                    "/api/stats",
+                )))
 
     print("\ntwo sides, one page")
     sides = set(re.findall(r'data-side="(\w+)"', html))

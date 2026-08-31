@@ -56,6 +56,13 @@
   <ul id="status-details" hidden></ul>
 </section>
 
+<section class="platform-stats" aria-label="Workspace summary">
+  <article><span>Saved findings</span><strong id="stat-total">—</strong></article>
+  <article><span>Model enriched</span><strong id="stat-enriched">—</strong></article>
+  <article><span>Pending alerts</span><strong id="stat-unalerted">—</strong></article>
+  <article><span>Stored sources</span><strong id="stat-sources">—</strong></article>
+</section>
+
 <!-- ============================ SWEEP ============================ -->
 <section id="view-sweep">
 
@@ -220,6 +227,13 @@
       Search discovers candidates. Page, infrastructure and threat observations
       establish risk. Exact identifier reuse reveals campaigns.
     </p>
+    <details class="advanced-options">
+      <summary>Target this investigation</summary>
+      <label class="field-label" for="discover-query">Optional search focus</label>
+      <input id="discover-query" class="standalone-input" type="text" maxlength="200"
+             placeholder="e.g. fake loan application or WhatsApp recruitment">
+      <p class="hint">Keep the brand above for identity context; use this field to narrow the specific campaign or claim.</p>
+    </details>
   </form>
 
   <section class="trace compact-trace" id="discover-trace" hidden aria-live="polite">
@@ -237,6 +251,12 @@
 
 <!-- ============================ QUEUE ============================ -->
 <section id="view-queue" hidden>
+
+  <header class="view-head compact-head" tabindex="-1"><div>
+    <span class="eyebrow">ScamScan / Analyst review</span>
+    <h1>Review and disposition findings</h1>
+    <p>Run a targeted hunt, inspect its evidence, then record a defensible analyst decision.</p>
+  </div></header>
 
   <form class="console" id="hunt-form" autocomplete="off">
     <label class="field-label" for="topics">Hunt for scams against <span id="brand-name">the brand</span></label>
@@ -293,24 +313,48 @@
 
 <!-- ============================ SCORE ============================ -->
 <section id="view-score" hidden>
-  <form class="console" id="score-form" autocomplete="off">
-    <label class="field-label" for="score-text">Score a page offline — no API call, no cost</label>
-    <textarea id="score-text" rows="5" spellcheck="false"
-              placeholder="Paste the page copy. Try: Confirmed. You have received Ksh2,530.00. New M-PESA balance is Ksh(*LOCKED*). Pay to POCHI TODAY."></textarea>
-    <div class="field">
-      <input id="score-url" type="text" spellcheck="false"
-             placeholder="http://mpesa-verify.co.ke/login">
-      <button type="submit">Score</button>
-    </div>
-    <p class="hint">
-      The same code a hunt uses. Every lexicon hit shows the source it was
-      taken from, so you can see why a page scored what it did.
-    </p>
-  </form>
-  <div id="score-out"></div>
+  <header class="view-head compact-head" tabindex="-1"><div>
+    <span class="eyebrow">ScamScan / Verification</span>
+    <h1>Verify a page or URL</h1>
+    <p>Choose a safe offline text check or fetch and inspect a live public URL.</p>
+  </div></header>
+  <div class="verification-grid">
+    <form class="console" id="score-form" autocomplete="off">
+      <span class="tool-badge">No network request</span>
+      <label class="field-label" for="score-text">Score pasted page content</label>
+      <textarea id="score-text" rows="5" spellcheck="false" required
+                placeholder="Paste suspicious page copy here…"></textarea>
+      <div class="field">
+        <input id="score-url" type="url" spellcheck="false"
+               aria-label="Optional source URL" placeholder="Optional source URL">
+        <button type="submit">Score text</button>
+      </div>
+      <p class="hint">No page is fetched and no paid model is called. Every lexicon match includes its provenance.</p>
+    </form>
+    <form class="console live-scan" id="scan-form" autocomplete="off">
+      <span class="tool-badge tool-badge-live">Live safe fetch</span>
+      <label class="field-label" for="scan-url">Scan one public URL</label>
+      <div class="field field-stack">
+        <input id="scan-url" type="url" inputmode="url" spellcheck="false"
+               placeholder="https://suspicious-example.com" required>
+        <button type="submit" id="scan-go">Fetch and scan</button>
+      </div>
+      <p class="hint">Fetches the page using the server’s URL safety controls, then explains content, impersonation and infrastructure signals.</p>
+    </form>
+  </div>
+  <div class="tool-results" id="score-out" aria-live="polite"></div>
+  <div class="tool-results" id="scan-out" aria-live="polite"></div>
 </section>
 
 </main>
+
+<dialog class="detail-dialog" id="detail-dialog" aria-labelledby="detail-title">
+  <div class="dialog-head">
+    <div><span class="eyebrow" id="detail-kind">Investigation detail</span><h2 id="detail-title">Evidence</h2></div>
+    <button type="button" class="dialog-close" id="detail-close" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div id="detail-body"></div>
+</dialog>
 
 <script src="/app.js"></script>
 </body>

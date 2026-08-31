@@ -32,6 +32,20 @@ async function init() {
   }
   capabilities = data;
 
+  fetch("/api/stats")
+    .then((response) => response.ok ? response.json() : Promise.reject())
+    .then((stats) => {
+      ["total", "enriched", "unalerted", "sources"].forEach((key) => {
+        const target = $(`#stat-${key}`);
+        if (target) target.textContent = Number(stats[key] || 0).toLocaleString();
+      });
+    })
+    .catch(() => {
+      document.querySelectorAll(".platform-stats strong").forEach((node) => {
+        node.textContent = "Unavailable";
+      });
+    });
+
   const unavailable = data.sources.filter((s) => s.available === false);
   const availableCount = data.sources.length - unavailable.length;
   const statusDetails = $("#status-details");
@@ -672,7 +686,7 @@ $("#discover-form").onsubmit = async (e) => {
     const r = await fetch("/api/investigations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brand, query: brand, limit }),
+      body: JSON.stringify({ brand, query: $("#discover-query").value.trim() || brand, limit }),
     });
     const d = await r.json();
     if (!r.ok) {
@@ -688,6 +702,10 @@ $("#discover-form").onsubmit = async (e) => {
       `${candidates.length} domains · ${d.counts?.social_account || 0} social accounts · ` +
       `${d.counts?.phone_number || 0} phones`));
     summary.append(el("span", "warn", d.zero_key_mode ? "zero-key OSINT mode" : "review before acting"));
+    const runRecord = el("button", "summary-action", "View run record");
+    runRecord.type = "button";
+    runRecord.addEventListener("click", () => openInvestigationDetail(d.id));
+    summary.append(runRecord);
     renderInvestigationCoverage(d.coverage || {});
     renderCampaigns(d.campaigns || []);
     await renderInvestigationGraph(d.id);
@@ -724,8 +742,13 @@ function renderCampaigns(campaigns) {
   const box = $("#discover-campaigns");
   if (!campaigns.length) { box.replaceChildren(); return; }
   box.replaceChildren(el("h3", null, "Correlated campaigns"));
-  campaigns.forEach(item => box.append(el("p", "campaign-row",
-    `${item.public_id} · ${item.correlation_label} correlation · risk ${Math.round(item.threat_score || 0)}`)));
+  campaigns.forEach(item => {
+    const row = el("button", "campaign-row");
+    row.type = "button";
+    row.textContent = `${item.public_id} · ${item.correlation_label} correlation · risk ${Math.round(item.threat_score || 0)}`;
+    row.addEventListener("click", () => openCampaignDetail(item.id));
+    box.append(row);
+  });
 }
 
 async function renderInvestigationGraph(id) {
@@ -737,8 +760,13 @@ async function renderInvestigationGraph(id) {
   const graph = await response.json();
   box.append(el("h3", null, `Entity graph · ${graph.nodes.length} nodes · ${graph.edges.length} edges`));
   const nodes = el("div", "graph-nodes");
-  graph.nodes.slice(0, 40).forEach(node => nodes.append(el("span", `graph-node type-${node.entity_type}`,
-    `${node.entity_type}: ${node.display_value}`)));
+  graph.nodes.slice(0, 40).forEach(node => {
+    const button = el("button", `graph-node type-${node.entity_type}`,
+      `${node.entity_type}: ${node.display_value}`);
+    button.type = "button";
+    button.addEventListener("click", () => openEntityDetail(node.id));
+    nodes.append(button);
+  });
   box.append(nodes);
   const edges = el("div", "graph-edges");
   graph.edges.slice(0, 30).forEach(edge => edges.append(el("p", null,
@@ -769,7 +797,165 @@ function investigationCard(item) {
   const sources = el("div", "tags");
   (item.sources || []).forEach(source => sources.append(el("span", "tag", source)));
   c.append(sources);
+  if (item.entity_id) {
+    const inspect = el("button", "inspect-button", "Inspect evidence");
+    inspect.type = "button";
+    inspect.addEventListener("click", () => openEntityDetail(item.entity_id));
+    c.append(inspect);
+  }
   return c;
+}
+
+const detailDialog = $("#detail-dialog");
+$("#detail-close").addEventListener("click", () => detailDialog.close());
+detailDialog.addEventListener("click", (event) => {
+  if (event.target === detailDialog) detailDialog.close();
+});
+
+function showDetail(kind, title, content) {
+  $("#detail-kind").textContent = kind;
+  $("#detail-title").textContent = title;
+  $("#detail-body").replaceChildren(content);
+  if (!detailDialog.open) detailDialog.showModal();
+}
+
+async function openEntityDetail(id) {
+  const loading = el("p", "hint", "Loading entity and evidence…");
+  showDetail("Entity evidence", "Loading…", loading);
+  try {
+    const [entityResponse, evidenceResponse] = await Promise.all([
+      fetch(`/api/entities/${encodeURIComponent(id)}`),
+      fetch(`/api/entities/${encodeURIComponent(id)}/evidence`),
+    ]);
+    if (!entityResponse.ok || !evidenceResponse.ok) throw new Error();
+    const entity = await entityResponse.json();
+    const evidence = (await evidenceResponse.json()).evidence || [];
+    const body = el("div", "detail-content");
+    const facts = el("dl", "detail-facts");
+    [["Type", entity.entity_type], ["Canonical value", entity.canonical_value],
+      ["Confidence", `${Math.round((entity.confidence || 0) * 100)}%`],
+      ["Last observed", entity.last_seen || "Unknown"]].forEach(([name, value]) => {
+        facts.append(el("dt", null, name), el("dd", null, value));
+      });
+    body.append(facts, el("h3", null, `Evidence records (${evidence.length})`));
+    const list = el("div", "evidence-list");
+    if (!evidence.length) list.append(el("p", "hint", "No direct evidence is stored for this entity."));
+    evidence.forEach((item) => {
+      const record = el("article", "evidence-record");
+      record.append(el("strong", null, item.evidence_type),
+        el("span", "tag", item.source), el("p", null, item.observed_value || "Observed"));
+      if (item.source_url) {
+        const link = el("a", null, "Open source");
+        link.href = item.source_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+        record.append(link);
+      }
+      list.append(record);
+    });
+    body.append(list);
+    if (!capabilities.ephemeral_storage) body.append(entityVerdictForm(id));
+    else body.append(el("p", "warn-note", "Verdicts require durable storage on this deployment."));
+    showDetail("Entity evidence", entity.display_value || entity.canonical_value, body);
+  } catch {
+    showDetail("Entity evidence", "Could not load entity",
+      el("p", "errs", "The entity or its evidence is no longer available. Close this panel and rerun the investigation."));
+  }
+}
+
+function entityVerdictForm(id) {
+  const form = el("form", "entity-verdict-form");
+  const heading = el("h3", null, "Record analyst verdict");
+  const label = el("label", "field-label", "Verdict");
+  const select = el("select", "detail-select");
+  const selectId = `entity-verdict-${id}`;
+  select.id = selectId;
+  label.htmlFor = selectId;
+  select.required = true;
+  ["needs_review", "confirmed_malicious", "likely_malicious", "suspicious", "monitor",
+    "legitimate", "benign", "false_positive", "duplicate"].forEach((value) => {
+      const option = el("option", null, value.replaceAll("_", " "));
+      option.value = value; select.append(option);
+    });
+  const commentLabel = el("label", "field-label", "Analyst comment");
+  const comment = el("textarea", "detail-comment");
+  const commentId = `entity-comment-${id}`;
+  comment.id = commentId;
+  commentLabel.htmlFor = commentId;
+  comment.rows = 3; comment.maxLength = 2000;
+  const submit = el("button", "primary-button", "Save verdict");
+  submit.type = "submit";
+  const feedback = el("p", "form-feedback");
+  feedback.setAttribute("aria-live", "polite");
+  form.append(heading, label, select, commentLabel, comment, submit, feedback);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); submit.disabled = true; submit.textContent = "Saving…";
+    try {
+      const response = await fetch(`/api/entities/${encodeURIComponent(id)}/verdict`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verdict: select.value, comment: comment.value, analyst_identifier: "web-analyst" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Verdict was rejected");
+      feedback.className = "form-feedback success";
+      feedback.textContent = `Saved as ${data.analyst_verdict.replaceAll("_", " ")}. System classification remains unchanged.`;
+    } catch (error) {
+      feedback.className = "form-feedback errs";
+      feedback.textContent = error.message || "Verdict was not saved.";
+    } finally { submit.disabled = false; submit.textContent = "Save verdict"; }
+  });
+  return form;
+}
+
+async function openCampaignDetail(id) {
+  showDetail("Correlated campaign", "Loading…", el("p", "hint", "Loading campaign entities…"));
+  try {
+    const response = await fetch(`/api/campaigns/${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error();
+    const campaign = await response.json();
+    const body = el("div", "detail-content");
+    const summary = el("p", "campaign-summary",
+      `${campaign.correlation_label} correlation · threat score ${Math.round(campaign.threat_score || 0)} · ${campaign.status}`);
+    const list = el("div", "campaign-entities");
+    (campaign.entities || []).forEach((entity) => {
+      const button = el("button", "entity-row");
+      button.type = "button";
+      button.append(el("span", null, entity.display_value || entity.canonical_value),
+        el("small", null, `${entity.entity_type} · ${Math.round((entity.relationship_strength || 0) * 100)}% link`));
+      button.addEventListener("click", () => openEntityDetail(entity.id));
+      list.append(button);
+    });
+    body.append(summary, list);
+    showDetail("Correlated campaign", campaign.public_id, body);
+  } catch {
+    showDetail("Correlated campaign", "Could not load campaign",
+      el("p", "errs", "Campaign details are unavailable. Rerun the investigation and try again."));
+  }
+}
+
+async function openInvestigationDetail(id) {
+  showDetail("Investigation record", "Loading…", el("p", "hint", "Loading source run record…"));
+  try {
+    const response = await fetch(`/api/investigations/${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error();
+    const run = await response.json();
+    const body = el("div", "detail-content");
+    const facts = el("dl", "detail-facts");
+    [["Status", run.status], ["Query", run.query],
+      ["Coverage", `${run.coverage_percentage || 0}%`], ["Started", run.started_at || "Unknown"]]
+      .forEach(([name, value]) => facts.append(el("dt", null, name), el("dd", null, value)));
+    body.append(facts, el("h3", null, "Provider runs"));
+    const list = el("div", "source-run-list");
+    (run.source_runs || []).forEach((source) => {
+      const row = el("article", `source-run status-${source.status}`);
+      row.append(el("strong", null, source.source), el("span", "tag", source.status),
+        el("p", null, source.error_message || `${source.results_returned || 0} results returned`));
+      list.append(row);
+    });
+    body.append(list);
+    showDetail("Investigation record", run.brand, body);
+  } catch {
+    showDetail("Investigation record", "Could not load run",
+      el("p", "errs", "This investigation record is unavailable. Rerun discovery to create a new record."));
+  }
 }
 
 function discoveryCard(item) {
@@ -1034,6 +1220,52 @@ $("#score-form").onsubmit = async (e) => {
     out.replaceChildren(el("p", "errs", "Could not reach the server."));
   }
 };
+
+$("#scan-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const button = $("#scan-go");
+  const out = $("#scan-out");
+  button.disabled = true;
+  button.textContent = "Scanning…";
+  out.replaceChildren(el("div", "scan-progress", "Safely fetching and analysing the public page…"));
+  try {
+    const response = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("#scan-url").value.trim() }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "The URL could not be scanned.");
+    out.replaceChildren(liveScanCard(data));
+  } catch (error) {
+    out.replaceChildren(el("div", "empty-inline"));
+    out.firstChild.append(el("h3", null, "Scan incomplete"),
+      el("p", "errs", error.message || "The server could not scan that URL."));
+  } finally {
+    button.disabled = false;
+    button.textContent = "Fetch and scan";
+  }
+};
+
+function liveScanCard(data) {
+  const score = Number(data.score || 0);
+  const band = score >= 80 ? "HIGH" : score >= 45 ? "MED" : score >= 20 ? "LOW" : "WEAK";
+  const card = el("article", "card scan-result");
+  card.style.setProperty("--band", BAND_COLOUR[band]);
+  const top = el("div", "card-top");
+  top.append(gauge(band), el("span", "score", Math.round(score)),
+    el("span", "flag", String(data.verdict || "UNKNOWN").replaceAll("_", " ")));
+  card.append(top, el("h3", null, data.classification || "Scan result"));
+  if (data.confidence != null) {
+    card.append(el("p", "reason", `${Math.round(data.confidence * 100)}% evidence completeness`));
+  }
+  const findings = el("ul", "evidence-reasons");
+  (data.findings || []).forEach((finding) => findings.append(el("li", null, finding)));
+  if (findings.childNodes.length) card.append(findings);
+  card.append(el("p", "candidate-note",
+    "Automated assessment only — verify consequential decisions against the live source and independent evidence."));
+  return card;
+}
 
 function scoreCard(d) {
   const c = el("article", "card");
