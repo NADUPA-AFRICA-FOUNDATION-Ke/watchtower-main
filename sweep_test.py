@@ -136,7 +136,12 @@ def handler(request: httpx.Request) -> httpx.Response:
     if "bsky.app" in u:
         return httpx.Response(200, json=BLUESKY_JSON)
     if "api.gleif.org" in u:
-        return httpx.Response(200, json=GLEIF_JSON)
+        # GLEIF uses the JSON:API vendor type in production. The fetch layer
+        # must decode vendor +json media types, not mistake them for binary.
+        return httpx.Response(
+            200, json=GLEIF_JSON,
+            headers={"Content-Type": "application/vnd.api+json"},
+        )
     if "api.search.brave.com" in u:
         return httpx.Response(200, json=BRAVE_JSON)
     if "socialcrawl.dev/v1/search/everywhere" in u:

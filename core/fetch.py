@@ -186,8 +186,15 @@ class Fetcher:
             # Only decode to text when it plausibly is text. A PDF or an image
             # keeps its bytes and leaves `html` empty, so nothing downstream
             # mistakes a binary blob for an article.
+            # Structured APIs commonly use registered vendor media types such
+            # as GLEIF's ``application/vnd.api+json``. Treat every +json/+xml
+            # type as text; otherwise a valid 200 response is kept only in
+            # ``content`` while adapters receive an empty ``html`` string and
+            # incorrectly report malformed JSON.
             textual = (not ctype
                        or ctype.startswith("text/")
+                       or ctype.endswith("+json")
+                       or ctype.endswith("+xml")
                        or ctype in ("application/json", "application/xml",
                                     "application/rss+xml", "application/atom+xml",
                                     "application/xhtml+xml", "application/javascript"))
