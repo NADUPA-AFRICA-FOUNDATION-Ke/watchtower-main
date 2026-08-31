@@ -269,7 +269,12 @@ def main():
     ok &= check("markdown has a heading", md.startswith("# Sweep:"))
     ok &= check("markdown lists every finding",
                 md.count("### ") >= len(res.items) - 1)
-    ok &= check("markdown carries the run detail table", "| Source | Hits |" in md)
+    ok &= check("markdown opens with an executive summary",
+                "## Executive summary" in md)
+    ok &= check("markdown carries a readable coverage table",
+                "| Source | Status | Hits | Detail |" in md)
+    ok &= check("markdown carries a priority findings table",
+                "| Score | Finding | Source | Published |" in md)
 
     out = report.save(res, "out_test")
     ok &= check("report file written", out.exists() and out.stat().st_size > 400)

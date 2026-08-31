@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import threading
 
 import httpx
 
@@ -8,6 +9,36 @@ from core.fetch import Fetcher
 from core.models import Item
 from core.sources import BACKENDS
 from core.sweep import sweep
+
+
+def test_source_progress_is_emitted_before_slowest_source_finishes(monkeypatch):
+    slow_finished = threading.Event()
+    progress_saw_slow_finished = []
+
+    def quick(query, fetcher, hours=72, limit=20):
+        return []
+
+    def slow(query, fetcher, hours=72, limit=20):
+        time.sleep(0.15)
+        slow_finished.set()
+        return []
+
+    monkeypatch.setitem(BACKENDS, "quick_progress_test", quick)
+    monkeypatch.setitem(BACKENDS, "slow_progress_test", slow)
+    fetcher = Fetcher(
+        "watchtower-test/0.1", delay=0,
+        transport=httpx.MockTransport(lambda request: httpx.Response(404)),
+    )
+    sweep(
+        "target", fetcher,
+        backends=["quick_progress_test", "slow_progress_test"],
+        fetch_bodies=False,
+        progress=lambda event: progress_saw_slow_finished.append(
+            slow_finished.is_set()) if event.get("name") == "quick_progress_test" else None,
+    )
+    fetcher.close()
+
+    assert progress_saw_slow_finished == [False]
 
 
 def test_paid_backend_finishes_without_unbounding_other_sources(monkeypatch):

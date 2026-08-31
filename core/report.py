@@ -28,6 +28,11 @@ def _short(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n].rsplit(" ", 1)[0] + "..."
 
 
+def _cell(value: object) -> str:
+    """Keep user/provider text from breaking Markdown tables."""
+    return " ".join(str(value or "").split()).replace("|", "\\|")
+
+
 def progress_line(event: dict) -> str:
     """Render a sweep progress event as a CLI line. The web UI renders the same
     events as telemetry; neither owns the format."""
@@ -127,17 +132,32 @@ def terminal(result: SweepResult, top: int = 20) -> str:
 
 def markdown(result: SweepResult) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    searched = sum(1 for name in result.per_source
+                   if name not in result.failed and name not in result.skipped)
+    requested = len(result.per_source)
+    strong = len(result.strong)
+    ranking = "AI-assisted" if result.enriched else "Keyword-only"
     md = [
         f"# Sweep: {result.query}",
         "",
-        f"*{stamp} — {len(result.items)} result(s) across "
-        f"{len([v for v in result.per_source.values() if v])} source(s)*",
+        f"*Generated {stamp}*",
+        "",
+        "## Executive summary",
+        "",
+        f"- **Results:** {len(result.items)} findings; {strong} scored medium or high.",
+        f"- **Coverage:** {searched} of {requested} requested sources searched.",
+        f"- **Ranking:** {ranking}.",
         "",
     ]
 
     if not result.enriched:
-        md += ["> Ranked by keyword overlap only. Set `ANTHROPIC_API_KEY` for "
-               "relevance scoring, summaries and entity extraction.", ""]
+        reason = result.scoring_error or "No model API key was available"
+        md += [f"> **Ranking limitation:** {_cell(reason)}. Scores indicate keyword "
+               "overlap, not a verified risk assessment.", ""]
+
+    if not result.complete:
+        md += ["> **Coverage warning:** This sweep is incomplete. Missing sources "
+               "mean the findings are a floor, not proof that nothing else exists.", ""]
 
     watchlist = [i for i in result.items if i.source_type == "watchlist"]
     if watchlist:
@@ -152,29 +172,47 @@ def markdown(result: SweepResult) -> str:
         md += [f"| {n} | {c} |" for n, c in result.entities]
         md.append("")
 
-    md += ["## Findings", ""]
-    for i, item in enumerate(result.items, 1):
-        if item.source_type == "watchlist":
-            continue
+    ordinary = [i for i in result.items if i.source_type != "watchlist"]
+    if ordinary:
+        md += ["## Priority findings", "",
+               "| Score | Finding | Source | Published |",
+               "| ---: | --- | --- | --- |"]
+        for item in ordinary[:10]:
+            title = _cell(item.title or "Untitled")
+            published = _cell(item.published_at[:10] if item.published_at else "—")
+            md.append(f"| **{band(item.relevance)} {item.relevance}** | "
+                      f"[{title}]({item.url}) | {_cell(item.source)} | {published} |")
+        md.append("")
+
+    md += ["## Finding details", ""]
+    for i, item in enumerate(ordinary, 1):
         md += [f"### {i}. {item.title or '(untitled)'}", "",
-               f"`{band(item.relevance)} {item.relevance}` · "
-               f"{item.source}"
-               + (f" · {item.published_at[:16]}" if item.published_at else "")
-               + (f" · {item.author}" if item.author else ""),
+               f"**Priority:** {band(item.relevance)} ({item.relevance}/100)  ",
+               f"**Source:** {_cell(item.source)}"
+               + (f" · {_cell(item.published_at[:16])}" if item.published_at else "")
+               + (f" · {_cell(item.author)}" if item.author else ""),
                "",
-               f"<{item.url}>", ""]
+               f"**Original:** <{item.url}>", ""]
         if item.summary:
-            md += [item.summary, ""]
+            md += [f"**Summary:** {_short(item.summary, 500)}", ""]
         elif item.text:
-            md += [_short(item.text, 400), ""]
+            md += [f"**Extract:** {_short(item.text, 240)}", ""]
         if item.categories:
             md += ["Tags: " + ", ".join(f"`{c}`" for c in item.categories), ""]
         if item.entities:
             md += ["Entities: " + ", ".join(item.entities), ""]
 
-    md += ["## Run detail", "",
-           "| Source | Hits |", "| --- | ---: |"]
-    md += [f"| {k} | {v} |" for k, v in result.per_source.items()]
+    md += ["## Source coverage", "",
+           "| Source | Status | Hits | Detail |",
+           "| --- | --- | ---: | --- |"]
+    for name, hits in result.per_source.items():
+        if name in result.failed:
+            status, detail = "Failed", result.failed[name]
+        elif name in result.skipped:
+            status, detail = "Not searched", result.skipped[name]
+        else:
+            status, detail = "Searched", "—"
+        md.append(f"| {_cell(name)} | {status} | {hits} | {_cell(detail)} |")
     md.append("")
 
     if result.errors:

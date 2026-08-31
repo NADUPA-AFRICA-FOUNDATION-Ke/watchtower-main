@@ -194,13 +194,38 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
     pool = ThreadPoolExecutor(max_workers=max(1, min(workers, len(runnable) or 1)))
     try:
         futures = {pool.submit(run_backend, n, f): n for n, f in runnable}
+        done_iter = []
         try:
-            # None, not inf: as_completed feeds this to Event.wait(), which
-            # overflows on an infinite timeout rather than waiting forever.
+            # Process futures as they complete. Materialising as_completed into
+            # a list first held every progress event until the slowest source
+            # finished, making the live monitor look frozen for the full
+            # request budget even when most sources had already answered.
             wait_for = None if deadline is None else max(0.0, time_left())
-            done_iter = list(as_completed(futures, timeout=wait_for))
+            for future in as_completed(futures, timeout=wait_for):
+                done_iter.append(future)
+                name = futures[future]
+                try:
+                    _, got = future.result()
+                except SourceSkipped as e:
+                    result.skipped[name] = str(e)
+                    result.per_source[name] = 0
+                    progress({"type": "source", "name": name, "count": 0,
+                              "skipped": str(e)})
+                except Exception as e:
+                    reason = (str(e) if isinstance(e, SourceError)
+                              else f"{type(e).__name__}: {e}")
+                    result.failed[name] = reason
+                    result.errors.append(f"{name}: {reason}")
+                    result.per_source[name] = 0
+                    progress({"type": "source", "name": name, "count": 0,
+                              "error": type(e).__name__, "reason": reason})
+                else:
+                    collected.extend(got)
+                    result.per_source[name] = len(got)
+                    progress({"type": "source", "name": name,
+                              "count": len(got)})
         except FuturesTimeout:
-            done_iter = [f for f in futures if f.done()]
+            pass
         # A paid request may settle upstream even if we stop waiting locally.
         # Let only explicitly protected paid futures finish so their results
         # are not discarded; the deadline still applies to every other source
@@ -223,6 +248,11 @@ def sweep(query: str, fetcher: Fetcher, hours: int = 72,
                 result.per_source[name] = 0
                 progress({"type": "source", "name": name, "count": 0,
                           "skipped": "exceeded the sweep time budget"})
+                continue
+            # Ordinary completed futures were handled immediately above.
+            # Only protected futures can arrive here without having been
+            # rendered yet because they are allowed to finish after deadline.
+            if fut not in protected_futures:
                 continue
             try:
                 _, got = fut.result()

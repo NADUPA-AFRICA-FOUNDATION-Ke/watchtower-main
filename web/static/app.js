@@ -253,6 +253,10 @@ function startSweep(q) {
     fetch_bodies: $("#fetch-bodies").checked,
     // Fast interactive default; deep CLI runs can still request more.
     limit: 20,
+    // Model calls are serial and each can take seconds. Eight gives the UI a
+    // useful ranked sample without turning an interactive monitor into a
+    // several-minute batch job. Deep CLI/API runs can explicitly request more.
+    max_ai: 8,
     // Off by default, same as the API. The Archive tab is empty until this is
     // ticked, so it's the only way to populate it from the browser.
     save: $("#keep").checked,
