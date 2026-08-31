@@ -117,6 +117,21 @@ def test_web_discovery_falls_back_and_does_not_cache_empty_searches(monkeypatch)
                for entity in first.entities)
     assert second.entities
     assert calls.count("Fuliza") == 2
+    assert any("site:vercel.app" in query and "site:lovable.app" in query
+               for query in calls)
+
+
+def test_empty_public_index_is_limited_not_clean_coverage(monkeypatch):
+    import osint_discovery
+
+    monkeypatch.setattr(osint_discovery, "search_duckduckgo",
+                        lambda query, limit: [])
+    provider = DuckDuckGoProvider(ProviderCache())
+    context = DiscoveryContext("i", "Fuliza", "Fuliza", (), ("fuliza",), 5)
+    run = asyncio.run(provider.discover(context))
+
+    assert run.health.status == "limited"
+    assert "not clean coverage" in run.health.detail
 
 
 def test_ct_provider_creates_certificate_edges_from_fixture():
@@ -286,6 +301,45 @@ def test_evidence_scoring_controls_false_positives():
         "official_domains": ["safaricom.co.ke"], "aliases": ["mpesa"]
     })
     assert result.machine_verdict == "INSUFFICIENT_EVIDENCE"
+
+    hosted = Entity("domain", "fuliza-limit.lovable.app", "fuliza-limit.lovable.app")
+    result = score_domain(hosted, [], [], {hosted.id: hosted}, {
+        "official_domains": ["safaricom.co.ke"], "aliases": ["fuliza"]
+    })
+    assert result.machine_verdict == "SUSPICIOUS"
+    assert result.risk_score >= 60
+    assert result.categories["hosting_risk"] == 25
+
+    unrelated_hosted = Entity("domain", "personal-portfolio.vercel.app",
+                              "personal-portfolio.vercel.app")
+    result = score_domain(unrelated_hosted, [], [], {unrelated_hosted.id: unrelated_hosted}, {
+        "official_domains": ["safaricom.co.ke"], "aliases": ["fuliza"]
+    })
+    assert result.machine_verdict == "INSUFFICIENT_EVIDENCE"
+    assert result.categories["hosting_risk"] == 0
+
+    custom_hosted = Entity("domain", "fuliza-help.example", "fuliza-help.example",
+                           metadata={"dns": {"CNAME": ["cname.vercel-dns.com"]}})
+    result = score_domain(custom_hosted, [], [], {custom_hosted.id: custom_hosted}, {
+        "official_domains": ["safaricom.co.ke"], "aliases": ["fuliza"]
+    })
+    assert result.categories["hosting_risk"] == 25
+
+    opaque_hosted = Entity("domain", "kjsearesults.vercel.app",
+                           "kjsearesults.vercel.app")
+    discovery = Evidence(
+        "i", opaque_hosted.id, "duckduckgo", "discovery",
+        opaque_hosted.canonical_value, "https://kjsearesults.vercel.app/",
+        {"title": "FulizaBoost instant limit increase",
+         "snippet": "Increase your Fuliza allocation"}, 0.55,
+    )
+    result = score_domain(opaque_hosted, [discovery], [],
+                          {opaque_hosted.id: opaque_hosted}, {
+        "name": "Fuliza", "official_domains": ["safaricom.co.ke"],
+        "aliases": ["fuliza"],
+    })
+    assert result.machine_verdict == "SUSPICIOUS"
+    assert result.risk_score >= 50
 
 
 def test_shared_cloud_ip_alone_does_not_create_campaign(tmp_path):

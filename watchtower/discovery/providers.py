@@ -101,6 +101,14 @@ class HttpProvider(DiscoveryProvider):
 
 class DuckDuckGoProvider(DiscoveryProvider):
     name = "duckduckgo"
+    # Default public deployment domains documented by their respective hosts.
+    # These are searched explicitly because ordinary brand queries strongly
+    # favour established news/official domains and routinely omit small,
+    # recently-created impersonation pages.
+    HOSTING_GROUPS = (
+        ("vercel.app", "netlify.app", "lovable.app"),
+        ("pages.dev", "web.app", "firebaseapp.com", "github.io"),
+    )
 
     def __init__(self, cache=None):
         self.cache = cache or ProviderCache()
@@ -135,21 +143,56 @@ class DuckDuckGoProvider(DiscoveryProvider):
     async def discover(self, context):
         attempted = utcnow()
         try:
+            # Search hosted deployment domains first so a full page of generic
+            # news results cannot consume max_results before these candidates
+            # are even queried. One grouped query per hosting family keeps the
+            # extra latency bounded under the provider's one-request/second
+            # throttle.
+            hosted = [
+                f'"{context.brand}" (' + " OR ".join(
+                    f"site:{host}" for host in hosts) + ")"
+                for hosts in self.HOSTING_GROUPS
+            ]
+            hosted_filters = dict(zip(hosted, self.HOSTING_GROUPS))
+            brand_terms = {
+                re.sub(r"[^a-z0-9]", "", str(term).lower())
+                for term in (context.brand, *context.aliases)
+                if len(re.sub(r"[^a-z0-9]", "", str(term).lower())) >= 4
+            }
             queries = list(dict.fromkeys([
-                context.query,
+                *hosted,
                 f'"{context.brand}" scam OR fraud OR fake',
                 f'"{context.brand}" loan WhatsApp',
+                context.query,
             ]))
             rows = []
             seen_urls = set()
             for query in queries:
-                for row in await self._search(query, context.max_results):
+                per_query = (max(3, min(8, (context.max_results + 1) // 2))
+                             if query in hosted
+                             else max(5, min(context.max_results, 12)))
+                for row in await self._search(query, per_query):
                     url = row.get("url", "")
                     if not url or url in seen_urls:
                         continue
+                    if query in hosted_filters:
+                        row_host = (urlsplit(url).hostname or "").lower()
+                        if not any(row_host == suffix or row_host.endswith("." + suffix)
+                                   for suffix in hosted_filters[query]):
+                            continue
+                        searchable = re.sub(
+                            r"[^a-z0-9]", "",
+                            " ".join((url, row.get("title", ""),
+                                      row.get("summary", ""))).lower(),
+                        )
+                        if brand_terms and not any(term in searchable
+                                                   for term in brand_terms):
+                            continue
                     seen_urls.add(url)
                     rows.append(row)
-                if len(rows) >= context.max_results:
+                # Always run both hosting families. After that, stop once the
+                # requested candidate budget is full.
+                if len(rows) >= context.max_results and query not in hosted:
                     break
         except Exception as exc:
             return ProviderRun(SourceHealth(
@@ -157,7 +200,10 @@ class DuckDuckGoProvider(DiscoveryProvider):
                 last_attempt=attempted, error=f"{type(exc).__name__}: {exc}",
             ))
         run = ProviderRun(SourceHealth(
-            self.name, "operational", tuple(self.capabilities()), last_attempt=attempted
+            self.name, "operational" if rows else "limited",
+            tuple(self.capabilities()), last_attempt=attempted,
+            detail=("Public index returned no rows; unauthenticated search can "
+                    "be transient and this is not clean coverage") if not rows else "",
         ))
         for row in rows[:context.max_results]:
             item = _domain_result(

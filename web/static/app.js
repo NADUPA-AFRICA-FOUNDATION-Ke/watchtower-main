@@ -735,6 +735,12 @@ $("#discover-form").onsubmit = async (e) => {
     summary.append(el("span", null,
       `${candidates.length} domains · ${d.counts?.social_account || 0} social accounts · ` +
       `${d.counts?.phone_number || 0} phones`));
+    if (d.filtered_low_signal) {
+      const filtered = el("span", null,
+        `${d.filtered_low_signal} low-signal domain${d.filtered_low_signal === 1 ? "" : "s"} filtered`);
+      filtered.title = "Search matches without enough brand, credential, payment, threat, or infrastructure evidence.";
+      summary.append(filtered);
+    }
     summary.append(el("span", "warn", d.zero_key_mode ? "zero-key OSINT mode" : "review before acting"));
     const runRecord = el("button", "summary-action", "View run record");
     runRecord.type = "button";

@@ -349,20 +349,27 @@ class DiscoveryOrchestrator:
         self.store.finish(iid, successful, limited, failed, unavailable,
                           "Searched all configured and currently accessible sources.")
         counts = Counter(e.entity_type for e in entities.values())
+        ranked_candidates = [
+            {
+                "entity_id": domain.id,
+                "domain": domain.canonical_value,
+                "url": f"https://{domain.canonical_value}/",
+                **scored.get(domain.id, {}),
+            }
+            for domain in entities.values()
+            if domain.entity_type == "domain" and domain.id in candidate_domain_ids
+            and scored.get(domain.id, {}).get("risk_score", 0) >= 20
+        ]
+        ranked_candidates.sort(
+            key=lambda item: (item.get("risk_score", 0), item.get("confidence", 0)),
+            reverse=True,
+        )
         response = {
             "id": iid, "brand": brand, "zero_key_mode": True,
             "counts": dict(counts), "campaigns": campaigns,
             "scores": scored,
-            "candidates": [
-                {
-                    "entity_id": domain.id,
-                    "domain": domain.canonical_value,
-                    "url": f"https://{domain.canonical_value}/",
-                    **scored.get(domain.id, {}),
-                }
-                for domain in entities.values()
-                if domain.entity_type == "domain" and domain.id in candidate_domain_ids
-            ],
+            "candidates": ranked_candidates[:self.max_domains],
+            "filtered_low_signal": max(0, len(candidate_domain_ids) - len(ranked_candidates)),
             "coverage": {
                 "configured": len(requested), "attempted": len({h.provider for h in health}),
                 "successful": successful, "limited": limited, "failed": failed,

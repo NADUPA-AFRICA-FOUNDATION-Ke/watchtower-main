@@ -2,9 +2,50 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import re
 from urllib.parse import urlsplit
 
 from scamscan import impersonation_score
+
+
+FREE_HOST_SUFFIXES = (
+    "vercel.app", "netlify.app", "lovable.app", "firebaseapp.com",
+    "web.app", "github.io", "pages.dev", "000webhostapp.com",
+)
+
+
+def _host_is(host: str, suffix: str) -> bool:
+    host = host.lower().rstrip(".")
+    suffix = suffix.lower().rstrip(".")
+    return host == suffix or host.endswith("." + suffix)
+
+
+def _hosting_signal(entity) -> str:
+    domain = entity.canonical_value
+    for suffix in FREE_HOST_SUFFIXES:
+        if _host_is(domain, suffix):
+            return suffix
+    # Custom domains often retain a CNAME to the deployment platform.
+    cnames = entity.metadata.get("dns", {}).get("CNAME", [])
+    for cname in cnames:
+        value = str(cname).lower().rstrip(".")
+        if any(token in value for token in (
+            "vercel-dns.com", "netlify.com", "lovable.app",
+            "pages.dev", "firebaseapp.com",
+        )):
+            return value
+    return ""
+
+
+def _mentions_brand(text: str, brand_config: dict) -> bool:
+    folded = re.sub(r"[^a-z0-9]", "", (text or "").lower())
+    terms = [brand_config.get("name", ""), *brand_config.get("aliases", []),
+             *brand_config.get("products", [])]
+    return any(
+        len(needle) >= 4 and needle in folded
+        for term in terms
+        if (needle := re.sub(r"[^a-z0-9]", "", str(term).lower()))
+    )
 
 
 @dataclass
@@ -17,7 +58,7 @@ class EvidenceScore:
     contradictory_evidence: list[str] = field(default_factory=list)
     categories: dict[str, float] = field(default_factory=dict)
     sources: list[str] = field(default_factory=list)
-    scoring_version: str = "evidence-v1"
+    scoring_version: str = "evidence-v2"
 
     def dict(self):
         return asdict(self)
@@ -29,7 +70,7 @@ def _official(domain: str, official_domains) -> bool:
 
 
 def score_domain(entity, evidence, relationships, entities, brand_config) -> EvidenceScore:
-    """Score observed evidence; discovery snippets alone cannot exceed WATCHLIST."""
+    """Score observed evidence with hosting risk conditional on brand signals."""
     domain = entity.canonical_value
     if _official(domain, brand_config.get("official_domains", [])):
         return EvidenceScore(0, 1.0, "LEGITIMATE", len(evidence), [],
@@ -43,18 +84,43 @@ def score_domain(entity, evidence, relationships, entities, brand_config) -> Evi
         "social_relationships": 0.0,
         "campaign_correlation": 0.0,
         "domain_characteristics": 0.0,
+        "hosting_risk": 0.0,
         "redirect_behavior": 0.0,
     }
     strongest = []
     contradictory = []
     finding = {"url": f"https://{domain}/"}
     imp, reason = impersonation_score(finding["url"], brand_config)
-    categories["brand_impersonation"] = min(25, imp * 0.25)
+    categories["brand_impersonation"] = min(45, imp * 0.50)
     if imp >= 70:
         strongest.append(f"Domain resembles or contains the protected brand: {reason}")
     page = entity.metadata.get("page", {})
     page_text = " ".join((page.get("title", ""), page.get("description", ""),
                           page.get("visible_text", ""))).lower()
+    discovery_text = " ".join(
+        str(value)
+        for item in evidence
+        if item.evidence_type in {"discovery", "reverse_pivot"}
+        for value in (
+            item.raw_metadata.get("title", ""),
+            item.raw_metadata.get("snippet", ""),
+            item.observed_value or "",
+        )
+    )
+    hosting = _hosting_signal(entity)
+    hosted_brand_content = bool(hosting) and _mentions_brand(
+        page_text + " " + discovery_text, brand_config
+    )
+    if hosted_brand_content:
+        categories["brand_impersonation"] = max(
+            categories["brand_impersonation"], 25
+        )
+        strongest.append("Hosted page or search evidence mentions the protected brand")
+    # Shared hosting is not suspicious by itself. It becomes meaningful only
+    # when the hostname or observed content matches the protected brand.
+    if hosting and (imp >= 40 or hosted_brand_content):
+        categories["hosting_risk"] = 25
+        strongest.append(f"Brand-matching site uses easily-created hosting: {hosting}")
     if any(term in page_text for term in (
         "never share your pin", "fraud awareness", "scam alert",
         "how to avoid", "public notice", "press release",

@@ -47,6 +47,7 @@ FREE_HOSTS = [
     "vercel.app",
     "netlify.app",
     "netlify.com",
+    "lovable.app",
     "firebaseapp.com",
     "web.app",
     "github.io",
@@ -75,6 +76,7 @@ SEARCH_TEMPLATES = [
     # Google Dorks for free hosting with brand keywords
     'site:vercel.app "{brand}"',
     'site:netlify.app "{brand}"',
+    'site:lovable.app "{brand}"',
     'site:firebaseapp.com "{brand}"',
     'site:web.app "{brand}"',
     'site:github.io "{brand}"',

@@ -234,7 +234,7 @@ def impersonation_score(url, brand):
         if len(label_hits) > 1:
             base_impersonation += 10
         # vercel.app, netlify, firebaseapp.com and similar free hosts are common scam infrastructure
-        if re.search(r"\.(vercel\.app|netlify\.app|netlify\.com|firebaseapp\.com|web\.app|github\.io|pages\.dev)", host, re.I):
+        if re.search(r"\.(vercel\.app|netlify\.app|lovable\.app|netlify\.com|firebaseapp\.com|web\.app|github\.io|pages\.dev)", host, re.I):
             base_impersonation += 15
         score += base_impersonation
         reason.append(f"brand token in host: {label_hits[0]}")
@@ -361,7 +361,7 @@ def score_finding(finding, cfg):
     host = url_host(url)
     
     # Free hosting platforms commonly used for scams
-    free_hosts = ["vercel.app", "netlify.app", "firebaseapp.com", "web.app", "pages.dev", "github.io"]
+    free_hosts = ["vercel.app", "netlify.app", "lovable.app", "firebaseapp.com", "web.app", "pages.dev", "github.io"]
     on_free_host = any(host_is(host, fh) for fh in free_hosts)
     
     # Boost score when impersonation is strong AND on suspicious infrastructure
