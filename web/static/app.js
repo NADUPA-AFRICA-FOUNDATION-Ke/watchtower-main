@@ -1171,11 +1171,17 @@ function verdictRow(item) {
         });
         // A verdict that did not save is worse than one never recorded: the
         // analyst believes the item is dealt with. Say so on the card.
-        if (!r.ok) throw new Error();
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || "The server rejected the disposition.");
         b.title = "Saved";
-      } catch {
+        const saved = el("span", "form-feedback success", `Saved as ${data.verdict}. Refreshing queue…`);
+        row.append(saved);
+        // A "new" queue must immediately remove a finding after disposition;
+        // leaving the stale card in place made a successful save look broken.
+        window.setTimeout(() => loadQueue(), 250);
+      } catch (error) {
         b.classList.remove("is-on");
-        row.append(el("span", "errs", "Not saved — the server rejected it."));
+        row.append(el("span", "errs", `Not saved — ${error.message || "the server rejected it."}`));
       }
     };
     row.append(b);

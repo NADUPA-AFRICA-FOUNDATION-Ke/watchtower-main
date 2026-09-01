@@ -419,6 +419,16 @@ def db_connect(path=DB_PATH):
             analyst_note TEXT
         )"""
     )
+    # The queue predates analyst dispositions in some deployed databases.
+    # CREATE TABLE IF NOT EXISTS does not alter an existing table, so upgrade
+    # those databases in place before the API reads or writes the new columns.
+    columns = {row[1] for row in con.execute("PRAGMA table_info(findings)")}
+    for name, definition in (
+        ("disposition", "TEXT DEFAULT 'new'"),
+        ("analyst_note", "TEXT"),
+    ):
+        if name not in columns:
+            con.execute(f"ALTER TABLE findings ADD COLUMN {name} {definition}")
     con.commit()
     return con
 
