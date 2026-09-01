@@ -32,6 +32,7 @@ async function init() {
     return;
   }
   capabilities = data;
+  refreshSystemHealth(data);
 
   fetch("/api/stats")
     .then((response) => response.ok ? response.json() : Promise.reject())
@@ -133,6 +134,57 @@ async function init() {
       ? `scoring ready — ${provider}` : "scoring ready";
   }
 }
+
+async function refreshSystemHealth(sourceData = capabilities) {
+  let health;
+  try {
+    const response = await fetch("/api/system/health");
+    if (!response.ok) return;
+    health = await response.json();
+  } catch {
+    return;
+  }
+
+  const entries = Object.entries(health.sources || {});
+  const good = entries.filter(([, value]) =>
+    ["operational", "configured", "direct_api", "web_index_only"].includes(value.status)
+  );
+  const attention = entries.filter(([, value]) =>
+    ["provider_error", "timeout", "network_error", "rate_limited", "missing_credentials",
+     "unavailable", "subscription_limited", "limited", "degraded"].includes(value.status)
+  );
+  $("#system-status-summary").textContent =
+    `${good.length} source${good.length === 1 ? "" : "s"} healthy · ` +
+    `${attention.length} need${attention.length === 1 ? "s" : ""} attention`;
+
+  const details = $("#status-details");
+  details.replaceChildren(
+    el("li", null, `${good.length} source${good.length === 1 ? "" : "s"} healthy`),
+    ...(attention.length ? [el("li", null,
+      `${attention.length} source${attention.length === 1 ? "" : "s"} need attention — expand source details`)] : []),
+    el("li", null, health.model?.provider && health.model.provider !== "none"
+      ? `Model scoring: ${health.model.provider}` : "Model scoring: keyword ranking"),
+    el("li", null, health.storage?.persistent
+      ? "Storage: persistent" : "Storage: temporary"),
+  );
+
+  // Keep source chips honest after a live provider run. Credential state still
+  // controls whether a chip can be selected; health state only adds context.
+  const byName = health.sources || {};
+  sourceData.sources.forEach((source) => {
+    const chip = document.querySelector(`[data-source="${CSS.escape(source.name)}"]`);
+    const live = byName[source.name];
+    if (!chip || !live) return;
+    const status = live.status || "unknown";
+    chip.dataset.health = status;
+    chip.title = `${source.description || source.name} Live status: ${status}.` +
+      (live.error ? ` ${live.error}` : "");
+  });
+}
+
+// Refresh live health when returning to the workspace; this is intentionally
+// low frequency so status checks never compete with an active sweep.
+window.setInterval(() => refreshSystemHealth(), 60000);
 
 $("#status-toggle").onclick = () => {
   const details = $("#status-details");
