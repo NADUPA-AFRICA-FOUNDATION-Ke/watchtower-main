@@ -297,9 +297,11 @@ def main() -> None:
     store = Store(cfg["storage"]["database"])
 
     if args.command == "sources":
-        from core.sources import BACKEND_KEYS, has_credentials
+        from core.sources import BACKEND_KEYS, RETIRED_BACKENDS, has_credentials
         print("\nAvailable sweep backends:\n")
         for name in BACKENDS:
+            if name in RETIRED_BACKENDS:
+                continue
             mark = "*" if name in DEFAULT_BACKENDS else " "
             var = BACKEND_KEYS.get(name)
             if not var:

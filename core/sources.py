@@ -6,11 +6,8 @@ maintain when a site redesigns.
 
   gdelt          global news, all languages, 15-min lag, back to 2017
   google_news    broad news via the published RSS search endpoint
-  web_search     the whole indexed web, via Brave       (BRAVE_API_KEY)
   wikipedia      entity background and disambiguation
   hackernews     via Algolia's public API; tech and fintech chatter
-  mastodon       public post search on any instance that allows it
-  bluesky        public post search over the AT Protocol, no key
   reddit         official OAuth API   (REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET)
   x              X/Twitter recent search, official paid API (X_BEARER_TOKEN)
   socialcrawl    cross-platform public social search (SOCIALCRAWL_API_KEY)
@@ -830,11 +827,9 @@ BACKENDS = {
 # more had been added.
 BACKEND_KEYS = {
     "opensanctions": "OPENSANCTIONS_API_KEY",
-    "web_search": "BRAVE_API_KEY",
     "opencorporates": "OPENCORPORATES_API_KEY",
     "x": "X_BEARER_TOKEN",
     "reddit": "REDDIT_CLIENT_ID",
-    "bluesky": "BLUESKY_APP_PASSWORD",
     "socialcrawl": "SOCIALCRAWL_API_KEY",
 }
 
@@ -842,7 +837,6 @@ BACKEND_KEYS = {
 # single display key above so the web UI and CLI cannot advertise a source as
 # ready when its second credential is missing.
 BACKEND_REQUIREMENTS = {
-    "bluesky": ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"),
     "reddit": ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"),
 }
 
@@ -856,9 +850,12 @@ def has_credentials(name: str) -> bool:
     return not var or bool(os.environ.get(var))
 
 
-# Key-gated backends stay in the defaults: they now disable themselves in the
-# UI when the key is absent, and raise SourceSkipped rather than a silent zero
-# on the CLI, so including them costs nothing and forgetting a key is visible.
-DEFAULT_BACKENDS = ["gdelt", "google_news", "web_search", "wikipedia",
-                    "hackernews", "mastodon", "bluesky", "reddit", "x",
-                    "gleif", "opencorporates", "opensanctions"]
+# These legacy adapters remain importable for stored-job compatibility, but are
+# deliberately retired from defaults and the product UI. They are either
+# metered (Brave) or unreliable for unauthenticated search (Mastodon/Bluesky).
+# Keeping the names here lets old explicit jobs fail/upgrade predictably rather
+# than silently changing their meaning.
+RETIRED_BACKENDS = frozenset({"web_search", "mastodon", "bluesky"})
+
+DEFAULT_BACKENDS = ["gdelt", "google_news", "wikipedia", "hackernews",
+                    "reddit", "x", "gleif", "opencorporates", "opensanctions"]

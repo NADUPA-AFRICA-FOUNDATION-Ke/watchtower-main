@@ -89,9 +89,11 @@ def main():
     body = r.json()
     # Compare against the registry, not a hardcoded number — the last count
     # here drifted silently and told us 33 checks when there were 36.
-    from core.sources import BACKENDS, DEFAULT_BACKENDS
+    from core.sources import BACKENDS, DEFAULT_BACKENDS, RETIRED_BACKENDS
     names = {source["name"] for source in body["sources"]}
-    ok &= check("lists every backend", set(BACKENDS) <= names)
+    ok &= check("lists every active backend",
+                (set(BACKENDS) - set(RETIRED_BACKENDS)) <= names
+                and not (set(RETIRED_BACKENDS) & names))
     ok &= check("marks defaults", all(
         next(source for source in body["sources"] if source["name"] == name)["default"]
         for name in DEFAULT_BACKENDS

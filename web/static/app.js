@@ -124,7 +124,7 @@ async function init() {
   const socialBox = $("#social-source");
   const socialNote = $("#social-note");
   const monitorSources = data.sources.filter((s) => s.surface !== "investigation");
-  const socialNames = new Set(["social_web_index", "socialcrawl", "mastodon", "bluesky", "reddit", "x"]);
+  const socialNames = new Set(["social_web_index", "socialcrawl", "reddit", "x"]);
   // Investigation providers (DNS, RDAP, CT, threat intelligence, etc.) pivot
   // from domains and belong to the Discover workflow. They used to appear as
   // Monitor chips even though /api/sweep cannot execute them; selecting one

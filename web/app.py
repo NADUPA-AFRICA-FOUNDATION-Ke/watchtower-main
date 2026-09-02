@@ -31,7 +31,7 @@ from core import report
 from core.enrich import Enricher
 from core.fetch import Fetcher
 from core.sources import (BACKEND_KEYS, BACKEND_REQUIREMENTS, BACKENDS,
-                          DEFAULT_BACKENDS, has_credentials)
+                          DEFAULT_BACKENDS, RETIRED_BACKENDS, has_credentials)
 from core.store import Store
 from core.sweep import sweep
 from investigation.storage import InvestigationStore
@@ -212,20 +212,17 @@ def list_sources():
                 "google_news": "Broad local and international news coverage",
                 "wikipedia": "Entity background and disambiguation context",
                 "hackernews": "Technology and fintech community discussions",
-                "mastodon": "Public posts from federated social networks",
                 "social_web_index": "Free public social links found through web indexing",
                 "gleif": "Legal entity identifiers and ownership records",
                 "sec_edgar": "US company filings and regulatory disclosures",
-                "web_search": "Broad web discovery through Brave Search",
                 "opensanctions": "Sanctions, PEP and watchlist records",
                 "opencorporates": "Global company registry records",
-                "bluesky": "Public posts through the official Bluesky API",
                 "reddit": "Subreddit search through the official Reddit API",
                 "x": "Posts through X's official API (paid access)",
                 "socialcrawl": "Cross-platform social discovery (paid credits)",
             }.get(n, "Public source adapter"),
         }
-        for n in BACKENDS
+        for n in BACKENDS if n not in RETIRED_BACKENDS
     ]
     return {
         "sources": [
@@ -249,20 +246,6 @@ def system_health():
         return bool(os.environ.get(key))
 
     sources = {
-        "brave": {
-            "configured": configured("BRAVE_API_KEY"),
-            "status": "degraded"
-            if configured("BRAVE_API_KEY")
-            else "missing_credentials",
-            "detail": "configured; live authentication is checked when queried",
-        },
-        "bluesky": {
-            "configured": configured("BLUESKY_HANDLE")
-            and configured("BLUESKY_APP_PASSWORD"),
-            "status": "degraded"
-            if configured("BLUESKY_HANDLE") and configured("BLUESKY_APP_PASSWORD")
-            else "missing_credentials",
-        },
         "reddit": {
             "configured": configured("REDDIT_CLIENT_ID")
             and configured("REDDIT_CLIENT_SECRET"),

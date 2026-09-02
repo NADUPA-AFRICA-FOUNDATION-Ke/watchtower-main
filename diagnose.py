@@ -38,18 +38,12 @@ ENDPOINTS = {
          "srsearch": q, "srlimit": 3}),
     "hackernews": lambda q: "https://hn.algolia.com/api/v1/search?" + urlencode(
         {"query": q, "hitsPerPage": 5}),
-    "mastodon": lambda q: "https://mastodon.social/api/v2/search?" + urlencode(
-        {"q": q, "type": "statuses", "limit": 5}),
     "sec_edgar": lambda q: "https://efts.sec.gov/LATEST/search-index?" + urlencode(
         {"q": f'"{q}"', "hits": 5}),
     "opensanctions": lambda q: "https://api.opensanctions.org/search/default?"
                                + urlencode({"q": q, "limit": 5}),
-    "bluesky": lambda q: "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?"
-                         + urlencode({"q": q, "limit": 5}),
     "gleif": lambda q: "https://api.gleif.org/api/v1/lei-records?"
                        + urlencode({"filter[fulltext]": q, "page[size]": 5}),
-    "web_search": lambda q: "https://api.search.brave.com/res/v1/web/search?"
-                            + urlencode({"q": q, "count": 5}),
     "opencorporates": lambda q: "https://api.opencorporates.com/v0.4/companies/search?"
                                 + urlencode({"q": q, "per_page": 5}),
     "reddit": lambda q: "https://oauth.reddit.com/search?" + urlencode(
@@ -62,11 +56,9 @@ ENDPOINTS = {
 # sends none — the point is to prove the endpoint is reachable and identify why
 # it refuses, not to exercise the key.
 NEEDS_KEY = {"opensanctions": "OPENSANCTIONS_API_KEY",
-             "web_search": "BRAVE_API_KEY",
              "opencorporates": "OPENCORPORATES_API_KEY",
              "reddit": "REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET",
-             "x": "X_BEARER_TOKEN",
-             "bluesky": "BLUESKY_HANDLE / BLUESKY_APP_PASSWORD"}
+             "x": "X_BEARER_TOKEN"}
 
 
 def load_ua() -> str:

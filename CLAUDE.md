@@ -216,7 +216,11 @@ Do not add them, even if asked casually; raise the tradeoff first. The line is
 the interface, not the brand: **X is included via its official paid API**
 (`X_BEARER_TOKEN`), because a documented endpoint with a contract behind it
 fails loudly. If TikTok Research API access is ever granted, the same reasoning
-would admit it. Mastodon and Bluesky are here because both publish open APIs.
+would admit it. Mastodon and Bluesky were evaluated but are retired from the
+product defaults because unauthenticated search is inconsistent and adds
+latency without dependable coverage. Brave web search is also retired from the
+default path because it is metered; Common Crawl and DuckDuckGo remain the
+free discovery fallback.
 
 **ICIJ Offshore Leaks is intentionally not a backend.** It is the single most
 on-topic dataset for beneficial ownership, and it publishes no API — the only
@@ -296,9 +300,9 @@ backend reports in. Don't replace it with a generic spinner — a sweep takes
 
 - **GDELT rate-limits hard from a single IP**, which surfaces as a failed lane
   rather than a zero. Backing off across sweeps, or caching, is unsolved.
-- **Mastodon returns a genuine 0** for most queries: unauthenticated status
-  search on mastodon.social is heavily restricted. The endpoint is healthy, so
-  this reads as a real zero — which may itself be misleading.
+- **Retired social/web providers remain legacy adapters** for old explicit CLI
+  jobs, but are hidden from defaults and the web source catalog. New workflows
+  use indexed social links, Common Crawl and safe page inspection instead.
 
 Verified in Chrome at 1440 / 820 / 380px on 2026-08-13: layout, the sweep
 trace, all four relevance bands, sticky sidebar, keyboard focus rings,

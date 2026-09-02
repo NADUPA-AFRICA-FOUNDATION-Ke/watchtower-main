@@ -938,11 +938,9 @@ def default_providers(cache: ProviderCache | None = None, client=None):
     web_search = DuckDuckGoProvider(cache)
     if enabled("ENABLE_DUCKDUCKGO"): providers.append(web_search)
     if enabled("ENABLE_SOCIAL_WEB_INDEX"): providers.append(SocialWebIndexProvider(web_search))
-    # These public endpoints are free and independent of authenticated monitor
-    # connectors.  They can be disabled per deployment when an instance blocks
-    # automated search; failures remain isolated source-health records.
-    if enabled("ENABLE_BLUESKY_PUBLIC"): providers.append(BlueskyPublicProvider(client, cache))
-    if enabled("ENABLE_MASTODON_PUBLIC"): providers.append(MastodonPublicProvider(client, cache))
+    # Instance-dependent social APIs are intentionally not part of the default
+    # investigation surface. SocialWebIndexProvider remains the stable, free
+    # public fallback and can discover indexed social URLs.
     if enabled("ENABLE_CT"): providers.append(CertificateTransparencyProvider(client, cache))
     if enabled("ENABLE_COMMONCRAWL"): providers.append(CommonCrawlProvider(client, cache))
     if enabled("ENABLE_RDAP"): providers.append(RDAPProvider(client, cache))

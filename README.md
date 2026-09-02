@@ -123,17 +123,16 @@ CT + Common Crawl + open-web/social indexes
 ```
 
 Discovery is iterative rather than a single search-engine request. Public
-indexes (DuckDuckGo and Common Crawl) seed candidates, while direct
-unauthenticated Bluesky/Mastodon endpoints add social signals where available.
-Every safe page observation feeds domains, accounts, phones and email addresses
+indexes (DuckDuckGo and Common Crawl) seed candidates, while the free indexed
+social adapter adds public social links where available. Every safe page observation feeds domains, accounts, phones and email addresses
 back into bounded reverse-pivot rounds; each new domain is enriched and
 inspected before the next round. The API reports round counts, page/request
 budgets and a termination reason so a partial run cannot be mistaken for a
 clean result. Provider calls are retried only when idempotent, cached,
 rate-limited and capped by the configured external-request budget.
 
-SocialCrawl and paid web search remain optional accelerators; free public
-providers are the default path and no authenticated social access is bypassed.
+SocialCrawl remains an optional accelerator; free public providers are the
+default path and no authenticated social access is bypassed.
 
 DuckDuckGo is one provider in this pipeline. A failure is stored as a source
 run and shown as failed, limited, or unavailable; it is never converted to a
@@ -164,15 +163,10 @@ investigation/storage.py              SQLite entities/evidence/edges/campaigns
 | `google_news` | broad news, good local outlet recall | no |
 | `wikipedia` | entity background, disambiguation | no |
 | `hackernews` | tech and fintech chatter | no |
-| `mastodon` | public social posts | no |
-| `mastodon_public` | unauthenticated public Mastodon search for investigations | no |
 | `gleif` | legal entity identifiers, corporate structure | no |
 | `sec_edgar` | US filings full-text | no |
-| `web_search` | broad web via Brave | `BRAVE_API_KEY` |
 | `opensanctions` | sanctions, PEP and watchlist matches | `OPENSANCTIONS_API_KEY` |
 | `opencorporates` | company registry records | `OPENCORPORATES_API_KEY` |
-| `bluesky` | public posts via the official API | `BLUESKY_HANDLE` + `BLUESKY_APP_PASSWORD` |
-| `bluesky_public` | unauthenticated public Bluesky AppView search for investigations | no |
 | `reddit` | subreddit search via the official API | `REDDIT_CLIENT_ID` + `_SECRET` |
 | `x` | posts via X's official paid API | `X_BEARER_TOKEN` |
 | `socialcrawl` | public posts across multiple social platforms (opt-in; paid credits) | `SOCIALCRAWL_API_KEY` |
@@ -285,11 +279,11 @@ purge and its removal from the FTS index.
 - Social posts are personal data. Under Kenya's Data Protection Act 2019 you
   need a lawful basis, a stated purpose and a retention limit. `RETENTION_DAYS`
   in `adapters/social.py` is enforced on every scheduled run.
-- Instagram, TikTok, LinkedIn and Facebook are absent on purpose. They prohibit
-  scraping and fail *silently*, which is the worst failure mode for monitoring:
-  you believe you have coverage and you don't. The line is the interface, not
-  the brand: X, Reddit and Bluesky are here because each publishes a documented
-  API that fails loudly, and Mastodon because its API is open.
+- Instagram, TikTok, LinkedIn, Facebook, Mastodon and Bluesky are absent on
+  purpose. They either prohibit scraping or provide inconsistent unauthenticated
+  search, which is the worst failure mode for monitoring. Brave web search is
+  also retired from the default path because it is metered; Common Crawl,
+  DuckDuckGo and direct page inspection provide the stable free fallback.
 - Sweeping a named private individual is a different activity from sweeping a
   topic or a company, legally and ethically. Know which one you're doing.
 
