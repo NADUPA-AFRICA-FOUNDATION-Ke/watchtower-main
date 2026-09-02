@@ -93,10 +93,32 @@ class HttpProvider(DiscoveryProvider):
             self._last_request = time.monotonic()
 
     async def _json(self, method: str, url: str, **kwargs):
-        await self._throttle()
-        response = await self.client.request(method, url, **kwargs)
-        response.raise_for_status()
-        return response.json()
+        """Fetch JSON with bounded retries for safe/idempotent requests.
+
+        Discovery endpoints are public and occasionally return a transient 5xx
+        or 429.  Retry GETs only; POST-backed threat lookups are deliberately
+        left to their callers so a paid or stateful request is never replayed.
+        """
+        attempts = 2 if method.upper() in {"GET", "HEAD"} else 1
+        for attempt in range(attempts):
+            try:
+                await self._throttle()
+                response = await self.client.request(method, url, **kwargs)
+                if response.status_code in {408, 425, 429, 500, 502, 503, 504} and attempt + 1 < attempts:
+                    retry_after = response.headers.get("retry-after", "")
+                    try:
+                        delay = min(2.0, max(0.1, float(retry_after)))
+                    except ValueError:
+                        delay = 0.25 * (attempt + 1)
+                    await asyncio.sleep(delay)
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt + 1 >= attempts:
+                    raise
+                await asyncio.sleep(0.25 * (attempt + 1))
+        raise RuntimeError("request retry loop exhausted")
 
 
 class DuckDuckGoProvider(DiscoveryProvider):
@@ -265,6 +287,180 @@ class SocialWebIndexProvider(DiscoveryProvider):
         return _finish(self, run)
 
 
+class BlueskyPublicProvider(HttpProvider):
+    """Unauthenticated Bluesky AppView search for public posts.
+
+    This is intentionally separate from the authenticated monitor connector:
+    investigations can use the free public endpoint without storing a handle
+    or app password.  A server-side policy change is reported as limited rather
+    than turning the whole investigation into a false clean result.
+    """
+    name = "bluesky_public"
+
+    def capabilities(self):
+        return ("social_api", "public_social", "bluesky")
+
+    async def discover(self, context):
+        attempted = utcnow()
+        run = ProviderRun(SourceHealth(
+            self.name, "operational", tuple(self.capabilities()), last_attempt=attempted,
+        ))
+        query = (context.query or context.brand).strip()[:180]
+        if not query:
+            return ProviderRun.unavailable(self, "limited", "empty query")
+        try:
+            cache_key = f"search:{query}:{context.max_results}"
+            data = self.cache.get(self.name, cache_key)
+            if data is None:
+                data = await self._json(
+                    "GET", "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts",
+                    params={"q": query, "limit": min(100, max(1, context.max_results))},
+                    timeout=8,
+                )
+                self.cache.put(self.name, cache_key, data, 900)
+            for post in (data or {}).get("posts", [])[:context.max_results]:
+                author = post.get("author") or {}
+                handle = str(author.get("handle") or "").strip()
+                uri = str(post.get("uri") or "")
+                text = str((post.get("record") or {}).get("text") or "")
+                source_url = str(post.get("url") or "")
+                if not source_url and handle and uri:
+                    rkey = uri.rsplit("/", 1)[-1]
+                    source_url = f"https://bsky.app/profile/{handle}/post/{rkey}"
+                if handle:
+                    account = Entity("social_account", f"bluesky:{handle.lower()}",
+                                     "@" + handle, "bluesky")
+                    run.entities.append(account)
+                    ev = Evidence(context.investigation_id, account.id, self.name,
+                                  "social_post", text[:500], source_url or None,
+                                  {"handle": handle, "uri": uri}, 0.7)
+                    run.evidence.append(ev)
+                    run.relationships.append(Relationship(
+                        context.investigation_id, _brand_entity(context).id,
+                        account.id, "mentions", 0.7, ev.id,
+                    ))
+                post_id = uri or source_url
+                if post_id:
+                    item = Entity("social_post", f"bluesky:{post_id}",
+                                  text[:160] or post_id, "bluesky",
+                                  metadata={"author": handle, "url": source_url})
+                    run.entities.append(item)
+                    ev = Evidence(context.investigation_id, item.id, self.name,
+                                  "social_post", text[:1000], source_url or None,
+                                  {"author": handle, "uri": uri}, 0.65)
+                    run.evidence.append(ev)
+                    run.relationships.append(Relationship(
+                        context.investigation_id, _brand_entity(context).id,
+                        item.id, "mentions", 0.65, ev.id,
+                    ))
+                for extracted in extract_entities(text, source_url):
+                    if extracted.entity_type not in {"domain", "phone_number", "email", "social_account"}:
+                        continue
+                    run.entities.append(extracted)
+                    ev = Evidence(context.investigation_id, extracted.id, self.name,
+                                  "social_post_entity", extracted.display_value,
+                                  source_url or None, {"author": handle}, 0.65)
+                    run.evidence.append(ev)
+                    run.relationships.append(Relationship(
+                        context.investigation_id, item.id if post_id else _brand_entity(context).id,
+                        extracted.id, "links_to", 0.65, ev.id,
+                    ))
+            run.health.results = len(run.entities)
+            if not run.entities:
+                run.health.status = "limited"
+                run.health.detail = "Public AppView returned no matching posts"
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            run.health.status = "rate_limited" if status == 429 else "limited" if status in {401, 403} else "provider_error"
+            run.health.error = f"HTTP {status}"
+            run.health.detail = "Public AppView search is unavailable or restricted" if status in {401, 403} else ""
+        except Exception as exc:
+            run.health.status = "provider_error"
+            run.health.error = f"{type(exc).__name__}: {exc}"
+        return _finish(self, run)
+
+
+class MastodonPublicProvider(HttpProvider):
+    """Best-effort public Mastodon search on a configurable instance."""
+    name = "mastodon_public"
+
+    def capabilities(self):
+        return ("social_api", "public_social", "mastodon")
+
+    async def discover(self, context):
+        attempted = utcnow()
+        run = ProviderRun(SourceHealth(
+            self.name, "operational", tuple(self.capabilities()), last_attempt=attempted,
+        ))
+        host = re.sub(r"[^a-z0-9.-]", "", os.environ.get("MASTODON_PUBLIC_HOST", "mastodon.social").lower()).strip(".")
+        query = (context.query or context.brand).strip()[:180]
+        if not host or not query:
+            return ProviderRun.unavailable(self, "limited", "public Mastodon host or query is empty")
+        try:
+            cache_key = f"search:{host}:{query}:{context.max_results}"
+            data = self.cache.get(self.name, cache_key)
+            if data is None:
+                data = await self._json(
+                    "GET", f"https://{host}/api/v2/search",
+                    params={"q": query, "type": "statuses", "limit": min(40, max(1, context.max_results))},
+                    timeout=8,
+                )
+                self.cache.put(self.name, cache_key, data, 900)
+            statuses = (data or {}).get("statuses", [])
+            for status in statuses[:context.max_results]:
+                account_data = status.get("account") or {}
+                acct = str(account_data.get("acct") or account_data.get("username") or "").strip()
+                status_url = str(status.get("url") or "")
+                content = re.sub(r"<[^>]+>", " ", str(status.get("content") or ""))
+                content = re.sub(r"\s+", " ", content).strip()
+                source_id = str(status.get("id") or status_url)
+                if acct:
+                    account = Entity("social_account", f"mastodon:{acct.lower()}", "@" + acct, "mastodon")
+                    run.entities.append(account)
+                    ev = Evidence(context.investigation_id, account.id, self.name,
+                                  "social_post", content[:500], status_url or None,
+                                  {"account": acct, "instance": host}, 0.65)
+                    run.evidence.append(ev)
+                    run.relationships.append(Relationship(context.investigation_id,
+                        _brand_entity(context).id, account.id, "mentions", 0.65, ev.id))
+                post = None
+                if source_id:
+                    post = Entity("social_post", f"mastodon:{source_id}", content[:160] or source_id,
+                                  "mastodon", metadata={"account": acct, "url": status_url, "instance": host})
+                    run.entities.append(post)
+                    ev = Evidence(context.investigation_id, post.id, self.name,
+                                  "social_post", content[:1000], status_url or None,
+                                  {"account": acct, "instance": host}, 0.6)
+                    run.evidence.append(ev)
+                    run.relationships.append(Relationship(context.investigation_id,
+                        _brand_entity(context).id, post.id, "mentions", 0.6, ev.id))
+                for extracted in extract_entities(content, status_url):
+                    if extracted.entity_type not in {"domain", "phone_number", "email", "social_account"}:
+                        continue
+                    run.entities.append(extracted)
+                    ev = Evidence(context.investigation_id, extracted.id, self.name,
+                                  "social_post_entity", extracted.display_value,
+                                  status_url or None, {"account": acct, "instance": host}, 0.6)
+                    run.evidence.append(ev)
+                    run.relationships.append(Relationship(context.investigation_id,
+                        post.id if post else _brand_entity(context).id, extracted.id,
+                        "links_to", 0.6, ev.id))
+            run.health.results = len(run.entities)
+            if not run.entities:
+                run.health.status = "limited"
+                run.health.detail = "Public Mastodon instance returned no matching statuses"
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            run.health.status = "rate_limited" if status == 429 else "limited" if status in {401, 403, 404} else "provider_error"
+            run.health.error = f"HTTP {status}"
+            if status in {401, 403, 404}:
+                run.health.detail = "This Mastodon instance does not expose public search"
+        except Exception as exc:
+            run.health.status = "provider_error"
+            run.health.error = f"{type(exc).__name__}: {exc}"
+        return _finish(self, run)
+
+
 class CertificateTransparencyProvider(HttpProvider):
     name = "certificate_transparency"
 
@@ -369,19 +565,49 @@ class CommonCrawlProvider(HttpProvider):
             if indexes is None:
                 indexes = await self._json("GET", "https://index.commoncrawl.org/collinfo.json")
                 self.cache.put(self.name, "indexes", indexes, 7 * 86400)
+            if not isinstance(indexes, list) or not indexes or not indexes[0].get("cdx-api"):
+                raise ValueError("Common Crawl index catalog was empty or malformed")
             endpoint = indexes[0]["cdx-api"]
             terms = CertificateTransparencyProvider.terms(context)[:5]
             seen = set()
             for term in terms:
-                response = await self.client.get(endpoint, params={
-                    "url": f"*.{term}*/*", "output": "json", "filter": "status:200",
-                    "collapse": "urlkey", "pageSize": context.max_results,
-                })
-                response.raise_for_status()
-                for line in response.text.splitlines():
+                key = f"cdx:{endpoint}:{term}:{context.max_results}"
+                lines = self.cache.get(self.name, key)
+                if lines is None:
                     try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
+                        data = await self._json("GET", endpoint, params={
+                            "url": f"*.{term}*/*", "output": "json", "filter": "status:200",
+                            "collapse": "urlkey", "pageSize": min(100, max(1, context.max_results)),
+                        })
+                        # _json cannot parse NDJSON as one object. Retry with a
+                        # bounded text request when the CDX endpoint responds
+                        # with newline-delimited records.
+                        lines = data if isinstance(data, list) else [data] if isinstance(data, dict) and data.get("url") else []
+                    except (json.JSONDecodeError, ValueError):
+                        response = await self.client.get(endpoint, params={
+                            "url": f"*.{term}*/*", "output": "json", "filter": "status:200",
+                            "collapse": "urlkey", "pageSize": min(100, max(1, context.max_results)),
+                        })
+                        if response.status_code == 404:
+                            lines = []
+                        else:
+                            response.raise_for_status()
+                            lines = []
+                            for line in response.text.splitlines()[:1000]:
+                                try:
+                                    row = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                if isinstance(row, dict):
+                                    lines.append(row)
+                    except httpx.HTTPStatusError as exc:
+                        if exc.response.status_code == 404:
+                            lines = []
+                        else:
+                            raise
+                    self.cache.put(self.name, key, lines, 7 * 86400)
+                for row in (lines or [])[:1000]:
+                    if not isinstance(row, dict):
                         continue
                     url = row.get("url", "")
                     domain = normalize_domain(url)
@@ -712,6 +938,11 @@ def default_providers(cache: ProviderCache | None = None, client=None):
     web_search = DuckDuckGoProvider(cache)
     if enabled("ENABLE_DUCKDUCKGO"): providers.append(web_search)
     if enabled("ENABLE_SOCIAL_WEB_INDEX"): providers.append(SocialWebIndexProvider(web_search))
+    # These public endpoints are free and independent of authenticated monitor
+    # connectors.  They can be disabled per deployment when an instance blocks
+    # automated search; failures remain isolated source-health records.
+    if enabled("ENABLE_BLUESKY_PUBLIC"): providers.append(BlueskyPublicProvider(client, cache))
+    if enabled("ENABLE_MASTODON_PUBLIC"): providers.append(MastodonPublicProvider(client, cache))
     if enabled("ENABLE_CT"): providers.append(CertificateTransparencyProvider(client, cache))
     if enabled("ENABLE_COMMONCRAWL"): providers.append(CommonCrawlProvider(client, cache))
     if enabled("ENABLE_RDAP"): providers.append(RDAPProvider(client, cache))

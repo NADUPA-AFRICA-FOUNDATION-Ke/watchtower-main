@@ -17,10 +17,12 @@ from watchtower.discovery.base import (
 from watchtower.discovery.orchestrator import DiscoveryOrchestrator
 from watchtower.discovery.page_analysis import analyze_page
 from watchtower.discovery.providers import (
+    BlueskyPublicProvider,
     CertificateTransparencyProvider,
     CommonCrawlProvider,
     DNSProvider,
     DuckDuckGoProvider,
+    MastodonPublicProvider,
     RDAPProvider,
     ThreatFoxProvider,
     URLhausProvider,
@@ -257,11 +259,91 @@ class FixtureFailure(DiscoveryProvider):
         raise TimeoutError("fixture timeout")
 
 
+class FixturePivotWeb(DuckDuckGoProvider):
+    """Deterministic public-index fixture for iterative rediscovery tests."""
+    name = "fixture_pivot_web"
+
+    async def discover(self, context):
+        run = ProviderRun(SourceHealth(self.name, "operational", tuple(self.capabilities())))
+        if context.depth == 0:
+            values = [("seed.example", "initial")]
+        elif "254700000000" in context.query:
+            values = [("tertiary.example", "phone pivot 2")]
+        else:
+            values = [("secondary.example", "phone pivot 1")]
+        for domain, label in values:
+            entity = Entity("domain", domain, domain)
+            ev = Evidence(context.investigation_id, entity.id, self.name,
+                          "discovery", domain, f"https://{domain}/", {"title": label}, 0.7)
+            run.entities.append(entity); run.evidence.append(ev)
+            run.relationships.append(Relationship(context.investigation_id,
+                Entity("brand", context.brand.lower(), context.brand).id,
+                entity.id, "mentions", 0.7, ev.id))
+        run.health.results = len(values)
+        return run
+
+
 class FixtureFetcher:
     async def fetch(self, url):
         if url.endswith("icon.png") or url.endswith("favicon.ico"):
             return SafeFetchResult(url, url, 200, "image/png", b"same-icon")
         return SafeFetchResult(url, url, 200, "text/html", SCAM_HTML.encode(), [url], {})
+
+
+class PivotFetcher(FixtureFetcher):
+    async def fetch(self, url):
+        if "secondary.example" in url:
+            body = SCAM_HTML.replace("254712345678", "254700000000")
+            return SafeFetchResult(url, url, 200, "text/html", body.encode(), [url], {})
+        return await super().fetch(url)
+
+
+def test_public_bluesky_provider_maps_posts_and_extracted_domains():
+    def handler(request):
+        return httpx.Response(200, json={"posts": [{
+            "uri": "at://did:plc:test/app.bsky.feed.post/abc",
+            "author": {"handle": "fraud-watch.test"},
+            "record": {"text": "M-PESA help at https://fuliza-help.example/"},
+        }]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = BlueskyPublicProvider(client)
+    run = asyncio.run(provider.discover(DiscoveryContext("i", "M-PESA", "M-PESA", max_results=5)))
+    assert run.health.status == "operational"
+    assert any(e.canonical_value == "bluesky:fraud-watch.test" for e in run.entities)
+    assert any(e.canonical_value == "fuliza-help.example" for e in run.entities)
+    assert all(r.evidence_id for r in run.relationships)
+    asyncio.run(client.aclose())
+
+
+def test_public_mastodon_restriction_is_reported_as_limited():
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(401)
+    ))
+    provider = MastodonPublicProvider(client)
+    run = asyncio.run(provider.discover(
+        DiscoveryContext("i", "M-PESA", "M-PESA", max_results=5)
+    ))
+    assert run.health.status == "limited"
+    assert "does not expose public search" in run.health.detail
+    asyncio.run(client.aclose())
+
+
+def test_iterative_reverse_pivots_inspect_new_domains_and_report_rounds(tmp_path):
+    store = InvestigationStore(tmp_path / "pivot.db")
+    engine = DiscoveryOrchestrator(
+        store, [FixturePivotWeb(), FixtureRegistration()], fetcher=PivotFetcher(),
+        max_domains=10, max_fetches=10, max_pivot_depth=2, max_external_requests=50,
+    )
+    result = asyncio.run(engine.investigate("M-PESA", "M-PESA", {
+        "name": "M-PESA", "aliases": ["mpesa"], "official_domains": [],
+    }))
+    assert result["expansion"]["pivot_entities"] >= 2
+    assert {row["depth"] for row in result["expansion"]["rounds"]} >= {1, 2}
+    graph = store.graph(result["id"])
+    domains = {node["canonical_value"] for node in graph["nodes"] if node["entity_type"] == "domain"}
+    assert {"seed.example", "secondary.example", "tertiary.example"} <= domains
+    assert store.get("entities", Entity("domain", "tertiary.example", "tertiary.example").id)["metadata"]
 
 
 def test_full_zero_key_graph_correlation_scoring_and_provider_failure(tmp_path):

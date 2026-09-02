@@ -982,6 +982,7 @@ $("#discover-form").onsubmit = async (e) => {
     runRecord.addEventListener("click", () => openInvestigationDetail(d.id));
     summary.append(runRecord);
     renderInvestigationCoverage(d.coverage || {});
+    renderInvestigationExpansion(d.expansion || {});
     renderCampaigns(d.campaigns || []);
     await renderInvestigationGraph(d.id);
     if (!candidates.length) {
@@ -1011,6 +1012,28 @@ function renderInvestigationCoverage(coverage) {
   (coverage.successful || []).forEach(name => tags.append(el("span", "tag", `✓ ${name}`)));
   failed.forEach(item => tags.append(el("span", "tag warn", `✗ ${item.provider || item.source}: ${item.status}`)));
   box.append(tags);
+}
+
+function renderInvestigationExpansion(expansion) {
+  const box = $("#discover-expansion");
+  if (!expansion || (!expansion.rounds?.length && !expansion.provider_calls)) {
+    box.replaceChildren();
+    return;
+  }
+  const rounds = (expansion.rounds || []).map((round) =>
+    `${round.depth}: ${round.pivots} pivot${round.pivots === 1 ? "" : "s"}, ` +
+    `${round.new_domains} new domain${round.new_domains === 1 ? "" : "s"}, ` +
+    `${round.inspected} inspected`
+  ).join(" · ");
+  box.replaceChildren(...[
+    el("h3", null, "Discovery expansion"),
+    el("p", null, `${expansion.domains_discovered || 0} candidate domains · ` +
+      `${expansion.domains_inspected || 0} pages inspected · ` +
+      `${expansion.pivot_entities || 0} pivot entities`),
+    rounds ? el("p", "hint", `Rounds — ${rounds}`) : null,
+    el("p", "hint", `Provider calls ${expansion.provider_calls || 0}/${expansion.provider_budget || 0} · ` +
+      `${expansion.termination_reason || "bounded run complete"}`),
+  ].filter(Boolean));
 }
 
 function renderCampaigns(campaigns) {

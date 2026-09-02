@@ -389,6 +389,7 @@ async def create_investigation(payload: dict = Body(...)):
             max_fetches=int(inv_cfg.get("max_page_fetches", 20)),
             max_pivot_depth=int(inv_cfg.get("max_pivot_depth", 2)),
             max_global_requests=int(inv_cfg.get("max_global_requests", 8)),
+            max_external_requests=int(inv_cfg.get("max_external_requests", 500)),
         )
         return await engine.investigate(
             brand, str(payload.get("query") or brand), configured_brand

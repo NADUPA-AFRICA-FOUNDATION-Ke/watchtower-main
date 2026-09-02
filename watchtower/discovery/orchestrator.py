@@ -60,21 +60,36 @@ class DiscoveryOrchestrator:
         max_fetches: int = 20,
         max_pivot_depth: int = 2,
         max_global_requests: int = 8,
+        max_external_requests: int = 500,
     ):
         self.store = store
         self.providers = list(providers)
         self.fetcher = fetcher or SafeFetcher()
-        self.max_domains = max_domains
-        self.max_fetches = max_fetches
-        self.max_pivot_depth = max_pivot_depth
-        self.max_global_requests = max_global_requests
+        self.max_domains = max(1, max_domains)
+        self.max_fetches = max(0, max_fetches)
+        self.max_pivot_depth = max(0, max_pivot_depth)
+        self.max_global_requests = max(1, max_global_requests)
+        self.max_external_requests = max(1, max_external_requests)
         self.semaphore: asyncio.Semaphore | None = None
+        self._budget_lock: asyncio.Lock | None = None
+        self._request_count = 0
 
     async def _call(self, method, *args) -> ProviderRun:
         if self.semaphore is None:
             self.semaphore = asyncio.Semaphore(self.max_global_requests)
+        if self._budget_lock is None:
+            self._budget_lock = asyncio.Lock()
         provider = getattr(getattr(method, "__self__", None), "name", "provider")
         started = time.monotonic()
+        async with self._budget_lock:
+            if self._request_count >= self.max_external_requests:
+                owner = getattr(method, "__self__", None)
+                run = ProviderRun.unavailable(cast(Any, owner), "limited",
+                                               "external request budget exhausted")
+                run.health.rate_limit = {"budget": self.max_external_requests}
+                run.health.duration_ms = 0
+                return run
+            self._request_count += 1
         async with self.semaphore:
             try:
                 run = await method(*args)
@@ -104,7 +119,13 @@ class DiscoveryOrchestrator:
             "max_domains": self.max_domains,
             "max_fetches": self.max_fetches,
             "max_pivot_depth": self.max_pivot_depth,
+            "max_external_requests": self.max_external_requests,
         })
+        # An orchestrator instance may be reused by a worker. Budgets are per
+        # investigation, while the semaphore is only a concurrency guard.
+        self._request_count = 0
+        self.semaphore = None
+        self._budget_lock = None
         context = DiscoveryContext(
             iid, brand, query or brand,
             tuple(x.lower() for x in brand_config.get("official_domains", [])),
@@ -129,7 +150,7 @@ class DiscoveryOrchestrator:
             relationships.update({item.id: item for item in run.relationships})
 
         discovery = [p for p in self.providers if set(p.capabilities()) &
-                     {"open_web", "domain_discovery", "historical_urls", "social_web_index"}]
+                     {"open_web", "domain_discovery", "historical_urls", "social_web_index", "social_api"}]
         runs = await asyncio.gather(*(self._call(p.discover, context) for p in discovery))
         for provider, run in zip(discovery, runs):
             absorb(run)
@@ -143,42 +164,65 @@ class DiscoveryOrchestrator:
         enrichers = [p for p in self.providers if set(p.capabilities()) & {
             "registration", "A", "live_certificate", "urlhaus", "threatfox"
         }]
-        tasks = [(provider, domain, self._call(provider.enrich, domain, context))
-                 for domain in domains for provider in enrichers]
-        enriched = await asyncio.gather(*(task[2] for task in tasks))
-        for (provider, _, _), run in zip(tasks, enriched):
-            absorb(run)
-
         ip_enrichers = [p for p in self.providers if "asn" in set(p.capabilities())]
-        ips = [e for e in entities.values() if e.entity_type == "ip_address"]
-        ip_tasks = [(provider, ip, self._call(provider.enrich, ip, context))
-                    for ip in ips for provider in ip_enrichers]
-        if ip_tasks:
-            ip_runs = await asyncio.gather(*(x[2] for x in ip_tasks))
-            for (provider, _, _), run in zip(ip_tasks, ip_runs):
-                absorb(run)
-
-        # Safe page observations are strong evidence and drive domain -> entity pivots.
         fetch_count = 0
         pivot_queue: deque[tuple[Entity, int]] = deque()
-        visited = set()
-        for candidate in entities.values():
-            if candidate.entity_type in {"social_account", "phone_number", "email"}:
-                pivot_queue.append((candidate, 1))
-        for domain in domains:
+        queued_pivots: set[tuple[str, int]] = set()
+        processed_domains: set[str] = set()
+        processed_ips: set[str] = set()
+        expansion_rounds: list[dict[str, Any]] = []
+
+        def queue_pivot(entity: Entity, depth: int):
+            if entity.entity_type not in {"social_account", "phone_number", "email"}:
+                return
+            key = (entity.id, depth)
+            if depth <= self.max_pivot_depth and key not in queued_pivots:
+                queued_pivots.add(key)
+                pivot_queue.append((entity, depth))
+
+        async def enrich_domain(domain: Entity, depth: int):
+            if domain.id in processed_domains:
+                return
+            processed_domains.add(domain.id)
+            domain_context = DiscoveryContext(
+                iid, brand, context.query, context.official_domains,
+                context.aliases, self.max_domains, depth,
+            )
+            tasks = [(provider, self._call(provider.enrich, domain, domain_context))
+                     for provider in enrichers]
+            if tasks:
+                for (provider, _), run in zip(tasks, await asyncio.gather(*(x[1] for x in tasks))):
+                    run.health.rate_limit = {**run.health.rate_limit, "discovery_round": depth}
+                    absorb(run)
+            # ASN lookups are driven only by newly observed addresses.
+            new_ips = [e for e in entities.values()
+                       if e.entity_type == "ip_address" and e.id not in processed_ips]
+            for ip in new_ips:
+                processed_ips.add(ip.id)
+                ip_tasks = [(provider, self._call(provider.enrich, ip, domain_context))
+                            for provider in ip_enrichers]
+                for (provider, _), run in zip(ip_tasks, await asyncio.gather(*(x[1] for x in ip_tasks))):
+                    run.health.rate_limit = {**run.health.rate_limit, "discovery_round": depth}
+                    absorb(run)
+
+        async def inspect_domain(domain: Entity, depth: int):
+            nonlocal fetch_count
+            if domain.metadata.get("page", {}).get("inspected"):
+                return
             if fetch_count >= self.max_fetches:
-                break
+                domain.metadata["page"] = {"error": "page fetch budget exhausted", "inspected": False}
+                return
             url = f"https://{domain.canonical_value}/"
             fetch_count += 1
             try:
                 fetched = await self.fetcher.fetch(url)
             except UnsafeTarget as exc:
-                domain.metadata["page"] = {"error": str(exc), "safe_fetch": "rejected"}
-                continue
+                domain.metadata["page"] = {"error": str(exc), "safe_fetch": "rejected", "inspected": True}
+                return
             page_meta = {
                 "status": fetched.status, "content_type": fetched.content_type,
                 "redirect_chain": fetched.redirect_chain, "headers": fetched.headers,
-                "error": fetched.error,
+                "error": fetched.error, "inspected": True, "discovery_round": depth,
             }
             if (fetched.body and not fetched.error and
                     (not fetched.content_type or fetched.content_type in
@@ -186,11 +230,9 @@ class DiscoveryOrchestrator:
                 page = analyze_page(fetched.text, fetched.final_url or url)
                 page_meta.update({
                     "title": page.title, "description": page.description,
-                    "visible_text": page.visible_text[:10000],
-                    "headings": page.headings, "forms": page.forms,
-                    "credential_fields": page.credential_fields,
-                    "analytics_ids": page.analytics_ids,
-                    "html_fingerprint": page.html_fingerprint,
+                    "visible_text": page.visible_text[:10000], "headings": page.headings,
+                    "forms": page.forms, "credential_fields": page.credential_fields,
+                    "analytics_ids": page.analytics_ids, "html_fingerprint": page.html_fingerprint,
                     "simhash": page.simhash,
                 })
                 for child in page.entities:
@@ -204,11 +246,9 @@ class DiscoveryOrchestrator:
                                    "normalized_value": child.canonical_value}, 0.95)
                     evidence[ev.id] = ev
                     rel = Relationship(iid, domain.id, child.id,
-                                       EDGE_BY_TYPE.get(child.entity_type, "links_to"),
-                                       0.95, ev.id)
+                                       EDGE_BY_TYPE.get(child.entity_type, "links_to"), 0.95, ev.id)
                     relationships[rel.id] = rel
-                    if child.entity_type in {"social_account", "phone_number", "email"}:
-                        pivot_queue.append((child, 1))
+                    queue_pivot(entities[child.id], depth + 1)
                 if page.favicon_url and fetch_count < self.max_fetches:
                     fetch_count += 1
                     try:
@@ -223,15 +263,15 @@ class DiscoveryOrchestrator:
                         ev = Evidence(iid, favicon.id, "safe_page", "favicon_hash",
                                       digest, page.favicon_url, {}, 1.0)
                         evidence[ev.id] = ev
-                        rel = Relationship(iid, domain.id, favicon.id,
-                                           "uses_favicon", 1.0, ev.id)
+                        rel = Relationship(iid, domain.id, favicon.id, "uses_favicon", 1.0, ev.id)
                         relationships[rel.id] = rel
                 for destination in fetched.redirect_chain[1:]:
                     target_host = normalize_domain(destination)
                     if not target_host:
                         continue
                     target = Entity("domain", target_host, target_host)
-                    entities.setdefault(target.id, target)
+                    existing = entities.get(target.id)
+                    entities[target.id] = self._merge_entity(existing, target) if existing else target
                     ev = Evidence(iid, target.id, "safe_page", "redirect_observation",
                                   destination, url, {}, 1.0)
                     evidence[ev.id] = ev
@@ -239,32 +279,60 @@ class DiscoveryOrchestrator:
                     relationships[rel.id] = rel
             domain.metadata["page"] = page_meta
 
-        # Reverse pivots use public indexing only and never crawl a blocked social platform.
+        # Initial discovery is followed by enrichment and safe inspection. This
+        # makes every discovered URL a first-class source of new search seeds.
+        for domain in domains:
+            await enrich_domain(domain, 0)
+            await inspect_domain(domain, 0)
+        for candidate in list(entities.values()):
+            queue_pivot(candidate, 1)
+
+        # Reverse pivots use public indexing only. Each new domain is enriched
+        # and inspected before its extracted identifiers enter the next round.
         web_provider = next((p for p in discovery if isinstance(p, DuckDuckGoProvider)), None)
+        visited: set[tuple[str, str]] = set()
         while pivot_queue and web_provider:
             entity, depth = pivot_queue.popleft()
             key = (entity.id, web_provider.name)
             if key in visited or depth > self.max_pivot_depth:
                 continue
             visited.add(key)
+            round_row = next((row for row in expansion_rounds if row["depth"] == depth), None)
+            if round_row is None:
+                round_row = {"depth": depth, "pivots": 0, "new_domains": 0, "inspected": 0}
+                expansion_rounds.append(round_row)
+            round_row["pivots"] += 1
             value = entity.canonical_value.split(":", 1)[-1]
             pivot_context = DiscoveryContext(
                 iid, brand, f'"{value}" "{brand}"', context.official_domains,
                 context.aliases, min(10, self.max_domains), depth,
             )
             run = await self._call(web_provider.discover, pivot_context)
-            self.store.record_source_run(iid, run.health)
+            run.health.rate_limit = {**run.health.rate_limit, "discovery_round": depth,
+                                     "pivot_entity": entity.canonical_value}
+            new_domain_ids = {item.id for item in run.entities
+                              if item.entity_type == "domain" and item.id not in entities}
+            absorb(run)
+            new_domains = []
             for target in run.entities:
-                if target.entity_type != "domain" or target.id in entities:
+                if target.entity_type != "domain":
                     continue
-                entities[target.id] = target
-                candidate_domain_ids.add(target.id)
-                ev = Evidence(iid, target.id, web_provider.name,
-                              "reverse_pivot", target.canonical_value, None,
-                              {"pivot_entity": entity.canonical_value}, 0.6)
+                if target.id in new_domain_ids:
+                    new_domains.append(target)
+                    round_row["new_domains"] += 1
+                    if len(candidate_domain_ids) < self.max_domains:
+                        candidate_domain_ids.add(target.id)
+                ev = Evidence(iid, target.id, web_provider.name, "reverse_pivot",
+                              target.canonical_value, None,
+                              {"pivot_entity": entity.canonical_value, "depth": depth}, 0.6)
                 evidence[ev.id] = ev
                 rel = Relationship(iid, entity.id, target.id, "links_to_domain", 0.6, ev.id)
                 relationships[rel.id] = rel
+            for target in new_domains:
+                await enrich_domain(target, depth)
+                before = fetch_count
+                await inspect_domain(target, depth)
+                round_row["inspected"] += max(0, fetch_count - before)
 
         # Exact high-value identifier reuse creates derived evidence and domain edges.
         owners: defaultdict[str, set[str]] = defaultdict(set)
@@ -343,11 +411,27 @@ class DiscoveryOrchestrator:
                 ))
 
         successful = sorted({h.provider for h in health if h.status == "operational"})
-        limited = [h.dict() for h in health if h.status in {"degraded", "limited", "rate_limited"}]
+        limited = [h.dict() for h in health if h.status in {
+            "degraded", "limited", "rate_limited", "web_index_only"
+        }]
         failed = [h.dict() for h in health if h.status in {"provider_error", "timeout", "network_error"}]
         unavailable = [h.dict() for h in health if h.status in {"unavailable", "disabled", "missing_credentials"}]
+        coverage_statement = (
+            "All configured sources completed successfully."
+            if not limited and not failed and not unavailable
+            else "Partial coverage: some sources were limited, failed, or unavailable."
+        )
+        if self._request_count >= self.max_external_requests:
+            termination_reason = "external request budget exhausted"
+        elif fetch_count >= self.max_fetches:
+            termination_reason = "page fetch budget exhausted"
+        elif expansion_rounds and any(row["new_domains"] for row in expansion_rounds):
+            termination_reason = "no unvisited pivot entities remain"
+        else:
+            termination_reason = "no meaningful new entities discovered"
         self.store.finish(iid, successful, limited, failed, unavailable,
-                          "Searched all configured and currently accessible sources.")
+                          f"Bounded iterative discovery completed: {termination_reason}. "
+                          f"{coverage_statement}")
         counts = Counter(e.entity_type for e in entities.values())
         ranked_candidates = [
             {
@@ -374,7 +458,17 @@ class DiscoveryOrchestrator:
                 "configured": len(requested), "attempted": len({h.provider for h in health}),
                 "successful": successful, "limited": limited, "failed": failed,
                 "unavailable": unavailable,
-                "statement": "Searched all configured and currently accessible sources.",
+                "statement": coverage_statement,
+            },
+            "expansion": {
+                "rounds": sorted(expansion_rounds, key=lambda row: row["depth"]),
+                "pivot_entities": len(visited),
+                "domains_discovered": len(candidate_domain_ids),
+                "domains_inspected": len(processed_domains),
+                "pages_fetched": fetch_count,
+                "provider_calls": self._request_count,
+                "provider_budget": self.max_external_requests,
+                "termination_reason": termination_reason,
             },
         }
         await asyncio.gather(*(provider.close() for provider in self.providers),

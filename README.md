@@ -122,6 +122,19 @@ CT + Common Crawl + open-web/social indexes
   -> evidence score, machine verdict, campaigns and coverage
 ```
 
+Discovery is iterative rather than a single search-engine request. Public
+indexes (DuckDuckGo and Common Crawl) seed candidates, while direct
+unauthenticated Bluesky/Mastodon endpoints add social signals where available.
+Every safe page observation feeds domains, accounts, phones and email addresses
+back into bounded reverse-pivot rounds; each new domain is enriched and
+inspected before the next round. The API reports round counts, page/request
+budgets and a termination reason so a partial run cannot be mistaken for a
+clean result. Provider calls are retried only when idempotent, cached,
+rate-limited and capped by the configured external-request budget.
+
+SocialCrawl and paid web search remain optional accelerators; free public
+providers are the default path and no authenticated social access is bypassed.
+
 DuckDuckGo is one provider in this pipeline. A failure is stored as a source
 run and shown as failed, limited, or unavailable; it is never converted to a
 zero-result success. TikTok, Facebook, and Instagram are deliberately marked
@@ -152,12 +165,14 @@ investigation/storage.py              SQLite entities/evidence/edges/campaigns
 | `wikipedia` | entity background, disambiguation | no |
 | `hackernews` | tech and fintech chatter | no |
 | `mastodon` | public social posts | no |
+| `mastodon_public` | unauthenticated public Mastodon search for investigations | no |
 | `gleif` | legal entity identifiers, corporate structure | no |
 | `sec_edgar` | US filings full-text | no |
 | `web_search` | broad web via Brave | `BRAVE_API_KEY` |
 | `opensanctions` | sanctions, PEP and watchlist matches | `OPENSANCTIONS_API_KEY` |
 | `opencorporates` | company registry records | `OPENCORPORATES_API_KEY` |
 | `bluesky` | public posts via the official API | `BLUESKY_HANDLE` + `BLUESKY_APP_PASSWORD` |
+| `bluesky_public` | unauthenticated public Bluesky AppView search for investigations | no |
 | `reddit` | subreddit search via the official API | `REDDIT_CLIENT_ID` + `_SECRET` |
 | `x` | posts via X's official paid API | `X_BEARER_TOKEN` |
 | `socialcrawl` | public posts across multiple social platforms (opt-in; paid credits) | `SOCIALCRAWL_API_KEY` |

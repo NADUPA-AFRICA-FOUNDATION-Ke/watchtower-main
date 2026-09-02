@@ -495,6 +495,10 @@ def main():
                     "/api/scan",
                     "/api/stats",
                 )))
+    ok &= check("investigation expansion rounds are visible",
+                'id="discover-expansion"' in html
+                and "renderInvestigationExpansion" in js
+                and "termination_reason" in js)
     ok &= check("terminal active navigation labels keep contrast",
                 re.search(r'\[data-theme="terminal"\] \.tab\.is-on\s*\{[^}]*color:\s*#0a0a0a;[^}]*background:\s*var\(--ink\)', css) is not None)
 
