@@ -36,6 +36,7 @@ def test_socialcrawl_maps_unified_results(monkeypatch):
                 "computed": {"language": "en"},
                 "created_at": "2026-08-20T12:00:00Z",
             }]},
+            "pagination": {"has_more": True, "next_cursor": "next-1"},
         })
 
     items = socialcrawl("mpesa scam", _fetcher(handler), hours=168)
@@ -46,12 +47,37 @@ def test_socialcrawl_maps_unified_results(monkeypatch):
     assert items[0].lang == "en"
     assert items[0].raw_meta["credits_used"] == 20
     assert items[0].raw_meta["engagement"] == {"likes": 10}
+    assert items[0].raw_meta["pagination"]["next_cursor"] == "next-1"
 
 
 def test_socialcrawl_requires_key(monkeypatch):
     monkeypatch.delenv("SOCIALCRAWL_API_KEY", raising=False)
     with pytest.raises(SourceSkipped, match="SOCIALCRAWL_API_KEY"):
         socialcrawl("query", _fetcher(lambda request: httpx.Response(500)))
+
+
+def test_socialcrawl_preflights_before_spending_credits(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"success": True, "data": {"items": []}})
+
+    fetcher = _fetcher(handler)
+    with pytest.raises(SourceError, match="at least 2 characters"):
+        socialcrawl(" ", fetcher)
+    with pytest.raises(SourceError, match="positive integer"):
+        socialcrawl("valid query", fetcher, limit=0)
+    assert calls == 0
+
+
+def test_socialcrawl_rejects_non_object_json_envelope(monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    fetcher = _fetcher(lambda request: httpx.Response(200, json=[]))
+    with pytest.raises(SourceError, match="JSON object"):
+        socialcrawl("query", fetcher)
 
 
 def test_socialcrawl_rejects_bad_payload(monkeypatch):

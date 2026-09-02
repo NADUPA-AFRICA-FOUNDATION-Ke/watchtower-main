@@ -724,9 +724,16 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
     if not key:
         raise SourceSkipped("SOCIALCRAWL_API_KEY is not set")
 
+    clean_query = " ".join(str(query or "").split())
+    if len(clean_query) < 2:
+        raise SourceError("SocialCrawl query must contain at least 2 characters; no credits were charged")
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise SourceError("SocialCrawl limit must be a positive integer; no credits were charged")
+    bounded_limit = min(limit, 100)
+
     lookback_days = max(1, min(3650, (max(0, hours) + 23) // 24))
     url = "https://www.socialcrawl.dev/v1/search/everywhere?" + urlencode({
-        "query": query,
+        "query": clean_query,
         "lookback_days": lookback_days,
     })
     # Universal Search is a paid, multi-source fan-out and can legitimately
@@ -742,6 +749,8 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
         payload = json.loads(res.html)
     except json.JSONDecodeError:
         raise SourceError("200 but the response body was not valid JSON")
+    if not isinstance(payload, dict):
+        raise SourceError("200 but the response body was not a JSON object")
     if payload.get("success") is False:
         detail = payload.get("error") or payload.get("message") or "API reported failure"
         raise SourceError(str(detail))
@@ -751,9 +760,11 @@ def socialcrawl(query: str, fetcher: Fetcher, hours: int = 72,
         for key in ("request_id", "credits_used", "credits_remaining", "cached")
         if payload.get(key) is not None
     }
+    if isinstance(payload.get("pagination"), dict):
+        envelope_meta["pagination"] = payload["pagination"]
     rows = _socialcrawl_items(payload)
     out = []
-    for row in rows[:limit]:
+    for row in rows[:bounded_limit]:
         author = row.get("author") or {}
         engagement = row.get("engagement") or {}
         computed = row.get("computed") or row.get("metadata") or {}
