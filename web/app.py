@@ -936,6 +936,14 @@ def scan_url(payload: dict = Body(...)):
     url = str(payload.get("url", "")).strip()
     if not url:
         raise HTTPException(400, "URL is required")
+    # Accept the form users actually paste (example.com) while keeping the
+    # scanner contract explicit for direct API callers as well.
+    from urllib.parse import urlparse
+    if "://" not in url:
+        url = f"https://{url}"
+    parsed_url = urlparse(url)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        raise HTTPException(422, "Enter a valid public http:// or https:// URL")
 
     cfg = scamscan_config()
 

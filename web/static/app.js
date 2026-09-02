@@ -1416,6 +1416,28 @@ $("#scan-form").onsubmit = async (event) => {
   event.preventDefault();
   const button = $("#scan-go");
   const out = $("#scan-out");
+  const rawUrl = $("#scan-url").value.trim();
+  if (!rawUrl) {
+    out.replaceChildren(el("p", "errs", "Enter a public URL to scan."));
+    $("#scan-url").focus();
+    return;
+  }
+  // Pasted domains commonly omit the scheme. Native type=url validation used
+  // to reject those before this handler ran, which looked like the app had
+  // lost the user's input. Accept domains and normalize them consistently.
+  const scanUrl = /^[a-z][a-z\d+.-]*:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+  let parsed;
+  try { parsed = new URL(scanUrl); } catch {
+    out.replaceChildren(el("p", "errs", "Enter a valid URL, for example https://example.com."));
+    $("#scan-url").focus();
+    return;
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) {
+    out.replaceChildren(el("p", "errs", "Only public http:// or https:// URLs can be scanned."));
+    $("#scan-url").focus();
+    return;
+  }
+  $("#scan-url").value = scanUrl;
   button.disabled = true;
   button.textContent = "Scanning…";
   out.replaceChildren(el("div", "scan-progress", "Safely fetching and analysing the public page…"));
@@ -1423,7 +1445,7 @@ $("#scan-form").onsubmit = async (event) => {
     const response = await fetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: $("#scan-url").value.trim() }),
+      body: JSON.stringify({ url: scanUrl }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "The URL could not be scanned.");
