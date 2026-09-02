@@ -757,9 +757,20 @@ BACKEND_KEYS = {
     "socialcrawl": "SOCIALCRAWL_API_KEY",
 }
 
+# Some official APIs require a credential pair. Keep this separate from the
+# single display key above so the web UI and CLI cannot advertise a source as
+# ready when its second credential is missing.
+BACKEND_REQUIREMENTS = {
+    "bluesky": ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"),
+    "reddit": ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"),
+}
+
 
 def has_credentials(name: str) -> bool:
     """True when this backend either needs no key or has the one it needs."""
+    requirements = BACKEND_REQUIREMENTS.get(name)
+    if requirements:
+        return all(bool(os.environ.get(var)) for var in requirements)
     var = BACKEND_KEYS.get(name)
     return not var or bool(os.environ.get(var))
 

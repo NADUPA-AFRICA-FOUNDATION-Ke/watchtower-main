@@ -31,7 +31,8 @@ from fastapi.staticfiles import StaticFiles
 from core import report
 from core.enrich import Enricher
 from core.fetch import Fetcher
-from core.sources import BACKEND_KEYS, BACKENDS, DEFAULT_BACKENDS, has_credentials
+from core.sources import (BACKEND_KEYS, BACKEND_REQUIREMENTS, BACKENDS,
+                          DEFAULT_BACKENDS, has_credentials)
 from core.store import Store
 from core.sweep import sweep
 from investigation.storage import InvestigationStore
@@ -205,7 +206,7 @@ def list_sources():
             "default": n in DEFAULT_BACKENDS,
             "needs_key": n in BACKEND_KEYS,
             "available": has_credentials(n),
-            "key_name": BACKEND_KEYS.get(n, ""),
+            "key_name": ", ".join(BACKEND_REQUIREMENTS.get(n, (BACKEND_KEYS.get(n, ""),))),
             "surface": "monitor",
             "description": {
                 "gdelt": "Global news and broadcasts with a short delay",
