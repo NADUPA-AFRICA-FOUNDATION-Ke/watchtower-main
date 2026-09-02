@@ -282,7 +282,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
       const section = document.getElementById(`view-${v}`);
       if (section) section.hidden = tab.dataset.view !== v;
     });
-    $("#rail-name").textContent = (tab.dataset.side || "watchtower").toUpperCase();
+    $("#rail-name").textContent = tab.dataset.side === "scamscan" ? "SCAMSCAN" : "MNARA";
     if (location.hash !== `#${tab.dataset.view}`) location.hash = tab.dataset.view;
     const heading = document.querySelector(`#view-${tab.dataset.view} .view-head`);
     if (heading) heading.focus();
@@ -923,7 +923,7 @@ function investigationCard(item) {
     `${item.evidence_count || 0} direct evidence records`));
   const reasons = el("ol", "evidence-reasons");
   (item.strongest_evidence || []).forEach(reason => reasons.append(el("li", null, reason)));
-  if (reasons.childNodes.length) c.append(el("h4", null, "Why Watchtower flagged this"), reasons);
+  if (reasons.childNodes.length) c.append(el("h4", null, "Why Mnara flagged this"), reasons);
   if (item.contradictory_evidence?.length) {
     c.append(el("p", "reason", `Contradictory evidence: ${item.contradictory_evidence.join("; ")}`));
   }

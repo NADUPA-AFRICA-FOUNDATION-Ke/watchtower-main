@@ -66,7 +66,7 @@ def main():
 
     print("\nstatic and meta")
     r = client.get("/")
-    ok &= check("index serves", r.status_code == 200 and "Watchtower" in r.text)
+    ok &= check("index serves", r.status_code == 200 and "Mnara" in r.text)
     ok &= check("stylesheet serves", client.get("/style.css").status_code == 200)
     ok &= check("script serves", client.get("/app.js").status_code == 200)
     ok &= check("OpenSanctions has a visible screening section",

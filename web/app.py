@@ -83,7 +83,7 @@ SWEEP_BUDGET = (
     or None
 )
 
-app = FastAPI(title="watchtower", docs_url="/api/docs")
+app = FastAPI(title="Mnara", docs_url="/api/docs")
 
 
 def investigation_store() -> InvestigationStore:
