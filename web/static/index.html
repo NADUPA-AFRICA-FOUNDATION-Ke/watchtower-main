@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -43,8 +43,12 @@
 
 <header class="workspace-head">
   <div><span class="workspace-kicker">Threat intelligence platform</span><strong>Investigation workspace</strong></div>
-  <div class="workspace-actions"><span class="privacy-pill"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4 2.8 7.1 7 8.6 4.2-1.5 7-4.6 7-8.6V6l-7-3Z"/></svg>Private by default</span></div>
+  <div class="workspace-actions"><span class="privacy-pill"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4 2.8 7.1 7 8.6 4.2-1.5 7-4.6 7-8.6V6l-7-3Z"/></svg>Private by default</span>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false" aria-label="Switch to terminal theme">[ TERMINAL MODE ]</button>
+  </div>
 </header>
+
+<div class="crt-overlay" aria-hidden="true"></div>
 
 <section class="system-status" id="system-status" aria-labelledby="system-status-title">
   <div>

@@ -21,6 +21,29 @@ let stream = null;
 let capabilities = {};
 let previewUrls = new Set();
 
+/* ------------------------------------------------------------ appearance */
+
+const THEME_KEY = "mnara-theme";
+const root = document.documentElement;
+const themeToggle = $("#theme-toggle");
+
+function applyTheme(theme) {
+  const terminal = theme === "terminal";
+  root.dataset.theme = terminal ? "terminal" : "light";
+  if (!themeToggle) return;
+  themeToggle.setAttribute("aria-pressed", String(terminal));
+  themeToggle.setAttribute("aria-label", terminal
+    ? "Switch to light theme" : "Switch to terminal theme");
+  themeToggle.textContent = terminal ? "[ LIGHT MODE ]" : "[ TERMINAL MODE ]";
+}
+
+applyTheme(window.localStorage.getItem(THEME_KEY) || "light");
+themeToggle?.addEventListener("click", () => {
+  const next = root.dataset.theme === "terminal" ? "light" : "terminal";
+  applyTheme(next);
+  window.localStorage.setItem(THEME_KEY, next);
+});
+
 /* ------------------------------------------------------------ bootstrap */
 
 async function init() {

@@ -1373,3 +1373,170 @@ textarea#score-text { min-height: 148px; padding: 15px 16px; border-color: #d8db
   .detail-facts dt, .detail-facts dd { border-bottom: 0; }
   .detail-facts dd { padding-top: 0; border-bottom: 1px solid var(--rule); }
 }
+
+/* ================================================================ themes */
+
+/* Mnara terminal mode is a theme, not a second markup tree. Every existing
+   component keeps its semantics and event wiring while these tokens turn the
+   workspace into a real, usable shell-like console. */
+[data-theme="terminal"] {
+  --paper: #0a0a0a;
+  --surface: #0a0a0a;
+  --sunk: #101810;
+  --ink: #33ff00;
+  --muted: #79a878;
+  --faint: #477044;
+  --rule: #1f521f;
+  --weak: #477044;
+  --low: #33ff00;
+  --med: #ffb000;
+  --high: #ff3333;
+  --accent: #33ff00;
+  --accent-soft: #102410;
+  --accent-deep: #33ff00;
+  --radius: 0px;
+  --sans: "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+[data-theme="terminal"] body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  background-image: linear-gradient(rgba(51,255,0,.025) 1px, transparent 1px);
+  background-size: 100% 4px;
+}
+[data-theme="terminal"] .crt-overlay {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: .14;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(51,255,0,.14) 4px);
+  mix-blend-mode: screen;
+}
+.crt-overlay { display: none; }
+
+[data-theme="terminal"] .rail,
+[data-theme="terminal"] .workspace-head,
+[data-theme="terminal"] .console,
+[data-theme="terminal"] .card,
+[data-theme="terminal"] .panel,
+[data-theme="terminal"] .trace,
+[data-theme="terminal"] .empty,
+[data-theme="terminal"] .empty-inline,
+[data-theme="terminal"] .coverage-panel,
+[data-theme="terminal"] .campaign-panel,
+[data-theme="terminal"] .investigation-graph,
+[data-theme="terminal"] .platform-stats article,
+[data-theme="terminal"] .system-status,
+[data-theme="terminal"] .source-run,
+[data-theme="terminal"] .evidence-record,
+[data-theme="terminal"] .detail-dialog {
+  background: var(--surface);
+  border-color: var(--rule);
+  border-radius: 0;
+  box-shadow: none;
+}
+[data-theme="terminal"] .rail { border-bottom-color: var(--rule); }
+[data-theme="terminal"] .rail-name,
+[data-theme="terminal"] .view-head h1,
+[data-theme="terminal"] .feature-card h2,
+[data-theme="terminal"] .feature-card h3,
+[data-theme="terminal"] .card h3,
+[data-theme="terminal"] .panel h4,
+[data-theme="terminal"] .platform-stats strong,
+[data-theme="terminal"] .system-status p,
+[data-theme="terminal"] .field-label,
+[data-theme="terminal"] .control legend {
+  color: var(--ink);
+  text-shadow: 0 0 5px rgba(51,255,0,.5);
+}
+[data-theme="terminal"] .brand-sub,
+[data-theme="terminal"] .view-head p,
+[data-theme="terminal"] .hint,
+[data-theme="terminal"] .card-meta,
+[data-theme="terminal"] .body,
+[data-theme="terminal"] .source-catalog,
+[data-theme="terminal"] .feature-card p { color: var(--muted); }
+[data-theme="terminal"] .tab { color: var(--muted); border-bottom-color: transparent; }
+[data-theme="terminal"] .tab.is-on,
+[data-theme="terminal"] .tab:hover { color: var(--ink); text-shadow: 0 0 5px rgba(51,255,0,.5); }
+[data-theme="terminal"] .tab.is-on { border-bottom-color: var(--ink); }
+[data-theme="terminal"] .privacy-pill,
+[data-theme="terminal"] .method-badge,
+[data-theme="terminal"] .tool-badge { color: var(--ink); border-color: var(--rule); background: var(--sunk); border-radius: 0; }
+[data-theme="terminal"] button,
+[data-theme="terminal"] input,
+[data-theme="terminal"] textarea,
+[data-theme="terminal"] select { border-radius: 0; }
+[data-theme="terminal"] .theme-toggle,
+[data-theme="terminal"] .status-toggle,
+[data-theme="terminal"] .cancel-run,
+[data-theme="terminal"] .summary-action,
+[data-theme="terminal"] .dialog-close {
+  color: var(--ink);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+}
+[data-theme="terminal"] .theme-toggle:hover,
+[data-theme="terminal"] .status-toggle:hover,
+[data-theme="terminal"] .cancel-run:hover,
+[data-theme="terminal"] .summary-action:hover,
+[data-theme="terminal"] .dialog-close:hover { color: #0a0a0a; background: var(--ink); }
+[data-theme="terminal"] .field input,
+[data-theme="terminal"] .standalone-input,
+[data-theme="terminal"] .detail-select,
+[data-theme="terminal"] .detail-comment {
+  color: var(--ink); background: #050805; border-color: var(--rule);
+  caret-color: var(--ink); text-shadow: 0 0 4px rgba(51,255,0,.35);
+}
+[data-theme="terminal"] .field input::placeholder { color: var(--faint); }
+[data-theme="terminal"] .field input:focus,
+[data-theme="terminal"] .standalone-input:focus { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+[data-theme="terminal"] .field button,
+[data-theme="terminal"] .feature-cta,
+[data-theme="terminal"] .primary-button,
+[data-theme="terminal"] .inspect-button { color: #0a0a0a; background: var(--ink); border-color: var(--ink); border-radius: 0; }
+[data-theme="terminal"] .field button:hover,
+[data-theme="terminal"] .feature-cta:hover,
+[data-theme="terminal"] .primary-button:hover,
+[data-theme="terminal"] .inspect-button:hover { color: var(--ink); background: #0a0a0a; }
+[data-theme="terminal"] .chip,
+[data-theme="terminal"] .segmented,
+[data-theme="terminal"] .segmented button,
+[data-theme="terminal"] .graph-node,
+[data-theme="terminal"] .entity-row,
+[data-theme="terminal"] .campaign-row { color: var(--muted); background: var(--surface); border-color: var(--rule); border-radius: 0; }
+[data-theme="terminal"] .chip.is-on,
+[data-theme="terminal"] .segmented button.is-on { color: #0a0a0a; background: var(--ink); border-color: var(--ink); }
+[data-theme="terminal"] .chip:hover,
+[data-theme="terminal"] .graph-node:hover,
+[data-theme="terminal"] .entity-row:hover,
+[data-theme="terminal"] .campaign-row:hover { color: #0a0a0a; background: var(--ink); border-color: var(--ink); }
+[data-theme="terminal"] .feature-card { border-radius: 0; border-color: var(--rule); background: var(--surface); }
+[data-theme="terminal"] .feature-dark { background: #101810; }
+[data-theme="terminal"] .gauge i.on,
+[data-theme="terminal"] .lane-fill { background: var(--ink); box-shadow: 0 0 5px rgba(51,255,0,.5); }
+[data-theme="terminal"] .lane-bar { background: #153015; }
+[data-theme="terminal"] .lane.zero .lane-fill { background: var(--rule); box-shadow: none; }
+[data-theme="terminal"] .flag,
+[data-theme="terminal"] .tag,
+[data-theme="terminal"] .corrob { color: var(--ink); background: var(--sunk); border-color: var(--rule); border-radius: 0; }
+[data-theme="terminal"] .errs { color: var(--high); }
+[data-theme="terminal"] .warn { color: var(--med); }
+[data-theme="terminal"] .detail-dialog::backdrop { background: rgba(0,0,0,.84); }
+[data-theme="terminal"] .dialog-head { background: #0a0a0a; border-bottom-color: var(--rule); }
+[data-theme="terminal"] .view-head h1 { animation: mnara-type .7s steps(18, end) both; border-right: 8px solid var(--ink); width: fit-content; max-width: 100%; }
+[data-theme="terminal"] .rail-mark::after { content: "_"; color: var(--ink); animation: mnara-blink 1s steps(2, start) infinite; }
+
+@keyframes mnara-type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes mnara-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="terminal"] .view-head h1 { animation: none; border-right-color: transparent; }
+  [data-theme="terminal"] .rail-mark::after { animation: none; }
+}
+@media (max-width: 600px) {
+  [data-theme="terminal"] .view-head h1 { white-space: normal; width: auto; border-right: 0; }
+}
