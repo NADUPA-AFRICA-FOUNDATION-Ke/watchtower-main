@@ -12,7 +12,6 @@ Now with async support for fast OSINT discovery using watchtower_async module.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging

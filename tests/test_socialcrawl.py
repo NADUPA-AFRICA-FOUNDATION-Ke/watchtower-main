@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import httpx
 import pytest
 
@@ -89,15 +87,39 @@ def test_socialcrawl_reports_unusable_paid_results(monkeypatch):
 
 
 def test_free_social_index_maps_public_platform_results(monkeypatch):
-    monkeypatch.setattr("osint_discovery.search_duckduckgo", lambda query, max_results: [
-        {"title": "M-Pesa scam alert", "url": "https://www.tiktok.com/@watch/1",
-         "summary": "Fake M-Pesa offer"},
-        {"title": "Unrelated", "url": "https://example.com/page", "summary": ""},
-    ])
+    seen = {}
+
+    def search(query, max_results):
+        seen.update(query=query, max_results=max_results)
+        return [
+            {"title": "M-Pesa scam alert", "url": "https://www.tiktok.com/@watch/1#comments",
+             "summary": "Fake M-Pesa offer"},
+            {"title": "Duplicate", "url": "http://www.tiktok.com/@watch/1",
+             "summary": "same post"},
+            {"title": "Unrelated", "url": "https://example.com/page", "summary": ""},
+            "malformed row",
+        ]
+
+    monkeypatch.setattr("osint_discovery.search_duckduckgo", search)
     items = social_web_index("M-Pesa scam", _fetcher(lambda request: httpx.Response(500)))
     assert len(items) == 1
     assert items[0].source == "social_web_index"
     assert items[0].raw_meta["platform"] == "tiktok.com"
+    assert items[0].url == "https://www.tiktok.com/@watch/1"
+    assert "OR M-Pesa scam" in seen["query"]
+    assert seen["max_results"] == 20
+
+
+def test_free_social_index_validates_query_and_surfaces_provider_errors(monkeypatch):
+    with pytest.raises(SourceError, match="at least 2 characters"):
+        social_web_index(" ", _fetcher(lambda request: httpx.Response(500)))
+
+    monkeypatch.setattr(
+        "osint_discovery.search_duckduckgo",
+        lambda query, max_results: (_ for _ in ()).throw(RuntimeError("rate limited")),
+    )
+    with pytest.raises(SourceError, match="free social index search failed: rate limited"):
+        social_web_index("watch tower", _fetcher(lambda request: httpx.Response(500)))
 
 
 def test_socialcrawl_surfaces_402_credit_details(monkeypatch):

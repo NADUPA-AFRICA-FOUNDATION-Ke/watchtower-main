@@ -37,7 +37,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import quote_plus, urlencode, urlsplit, urlunsplit
 
 import feedparser
 
@@ -244,33 +244,60 @@ def social_web_index(query: str, fetcher: Fetcher, hours: int = 72,
     """
     import osint_discovery
 
+    clean_query = " ".join(str(query or "").split())
+    if len(clean_query) < 2:
+        raise SourceError("social index query must contain at least 2 characters")
+
+    # Keep the exact phrase for precision, but include the unquoted form too:
+    # a newly-created impersonation account rarely repeats a long investigation
+    # phrase verbatim. One request preserves the latency/coverage budget while
+    # the OR makes the free fallback useful for names plus indicators.
     sites = ("tiktok.com", "instagram.com", "facebook.com", "t.me",
              "wa.me", "x.com", "youtube.com")
-    indexed_query = f'"{query}" (' + " OR ".join(f"site:{site}" for site in sites) + ")"
+    indexed_query = (f'("{clean_query}" OR {clean_query}) ('
+                     + " OR ".join(f"site:{site}" for site in sites) + ")")
+    bounded_limit = max(1, min(int(limit), 30))
     try:
-        rows = osint_discovery.search_duckduckgo(indexed_query, max_results=min(limit, 30))
+        rows = osint_discovery.search_duckduckgo(indexed_query,
+                                                 max_results=bounded_limit)
     except Exception as exc:
-        raise SourceError(str(exc)) from exc
+        raise SourceError(f"free social index search failed: {exc}") from exc
 
     out, seen = [], set()
     for row in rows or []:
-        url = str(row.get("url") or "").strip()
-        if not url or url in seen:
+        if not isinstance(row, dict):
             continue
-        host = url.split("/", 3)[2].lower() if "://" in url else ""
+        raw_url = str(row.get("url") or "").strip()
+        parsed = urlsplit(raw_url)
+        host = parsed.hostname.lower() if parsed.hostname else ""
         if not any(host == site or host.endswith("." + site) for site in sites):
             continue
-        seen.add(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        # Fragments and tracking parameters do not identify a different public
+        # post. Keep query parameters (some platform links need them), but make
+        # deduplication stable across http redirects and URL fragments.
+        normalized_host = host.removeprefix("www.")
+        identity = (normalized_host, parsed.path.rstrip("/") or "/",
+                    parsed.query)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        url = urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path,
+                         parsed.query, ""))
+        platform = next((site for site in sites
+                         if host == site or host.endswith("." + site)), "social")
         out.append(Item(
             url=url,
             source="social_web_index",
             source_type="social",
             title=_strip_tags(str(row.get("title") or ""))[:200],
             text=_strip_tags(str(row.get("summary") or ""))[:2000],
-            raw_meta={"platform": next((site for site in sites if host == site or host.endswith("." + site)), "social") ,
-                      "indexed": True},
+            raw_meta={"platform": platform, "indexed": True,
+                      "discovery_method": "duckduckgo_web_index",
+                      "indexed_query": indexed_query},
         ))
-    return out[:limit]
+    return out[:bounded_limit]
 
 
 # -------------------------------------------------------------- SEC EDGAR
