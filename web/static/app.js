@@ -71,7 +71,10 @@ async function init() {
   const box = $("#sources");
   const sanctionsBox = $("#sanctions-source");
   const sanctionsNote = $("#sanctions-note");
+  const socialBox = $("#social-source");
+  const socialNote = $("#social-note");
   const monitorSources = data.sources.filter((s) => s.surface !== "investigation");
+  const socialNames = new Set(["socialcrawl", "mastodon", "bluesky", "reddit", "x"]);
   // Investigation providers (DNS, RDAP, CT, threat intelligence, etc.) pivot
   // from domains and belong to the Discover workflow. They used to appear as
   // Monitor chips even though /api/sweep cannot execute them; selecting one
@@ -95,9 +98,16 @@ async function init() {
         sanctionsNote.textContent =
           `Set ${s.key_name || "OPENSANCTIONS_API_KEY"} to search sanctions, PEP and watchlist records.`;
       }
+      if (socialNames.has(s.name) && s.key_name) {
+        socialNote.textContent =
+          `${s.name} is unavailable until ${s.key_name} is configured. SocialCrawl uses paid credits; other public social sources remain independent.`;
+      }
     } else if (isSanctions) {
       sanctionsNote.textContent =
         "Ready — include OpenSanctions in this sweep for sanctions, PEP and watchlist matches.";
+    } else if (socialNames.has(s.name) && s.name === "socialcrawl") {
+      socialNote.textContent =
+        "Ready — SocialCrawl searches public posts across supported networks. Each request consumes credits.";
     }
     chip.onclick = () => {
       chip.classList.toggle("is-on");
@@ -106,7 +116,7 @@ async function init() {
       on ? selected.add(s.name) : selected.delete(s.name);
       updateSourceCatalog();
     };
-    (isSanctions ? sanctionsBox : box).append(chip);
+    (isSanctions ? sanctionsBox : socialNames.has(s.name) ? socialBox : box).append(chip);
   });
   renderSourceCatalog(monitorSources);
 

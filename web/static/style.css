@@ -249,6 +249,8 @@ main { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
 
 .control { border: 0; padding: 0; margin: 0; min-width: 0; }
 .control-wide { flex: 1; min-width: 260px; }
+.social-control { min-width: 260px; }
+.social-control .source-note { max-width: 420px; }
 
 .control legend {
   font-family: var(--mono);
