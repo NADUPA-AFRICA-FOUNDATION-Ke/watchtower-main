@@ -24,13 +24,17 @@
     <span><span class="rail-name" id="rail-name">MNARA</span><span class="brand-sub">Intelligence workspace</span></span>
   </div>
   <nav class="rail-nav">
+    <div class="mode-switch" role="tablist" aria-label="Mnara work mode">
+      <button type="button" class="mode-tab is-on" data-mode="monitor" role="tab" aria-selected="true">Monitor</button>
+      <button type="button" class="mode-tab" data-mode="investigate" role="tab" aria-selected="false">Investigate</button>
+    </div>
     <div class="side-group" data-side="watchtower">
-      <span class="side-label">Research</span>
+      <span class="side-label">Monitor workspace</span>
       <button class="tab is-on" data-view="sweep" data-side="watchtower" aria-current="page"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>Monitor</span></button>
       <button class="tab" data-view="archive" data-side="watchtower"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v13H4zM3 4h18v3H3z"/><path d="M9 11h6"/></svg><span>Saved results</span></button>
     </div>
     <div class="side-group" data-side="scamscan">
-      <span class="side-label">Investigations</span>
+      <span class="side-label">Investigation workspace</span>
       <button class="tab" data-view="discover" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/></svg><span>Find scam sites</span></button>
       <button class="tab" data-view="queue" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg><span>Review queue</span></button>
       <button class="tab" data-view="score" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8"/></svg><span>Quick score</span></button>
@@ -75,38 +79,10 @@
     <p>Search news, regulatory, reference and selected social sources for a topic.</p></div>
   </header>
 
-  <section class="feature-overview" aria-label="Mnara capabilities">
-    <article class="feature-card feature-primary">
-      <span class="feature-label">Unified intelligence</span>
-      <h2>Find the signal.<br>Follow the evidence.</h2>
-      <p>Search public sources, connect infrastructure, screen entities and move credible findings into analyst review.</p>
-      <div class="feature-actions">
-        <button type="button" class="feature-cta" data-focus-search>Start monitoring</button>
-        <button type="button" class="feature-link" data-open-view="discover">Open discovery <span aria-hidden="true">→</span></button>
-      </div>
-      <div class="signal-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><span></span></div>
-    </article>
-    <article class="feature-card capability-card">
-      <span class="capability-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 17 9 12l4 3 7-8"/><path d="M15 7h5v5"/></svg></span>
-      <span class="feature-label">Live coverage</span>
-      <h3>Multi-source monitoring</h3>
-      <p>News, regulators, reference data and social discovery in one sweep.</p>
-      <button type="button" class="card-link" data-focus-search>Configure sweep <span aria-hidden="true">↗</span></button>
-    </article>
-    <article class="feature-card capability-card feature-dark">
-      <span class="capability-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="12" cy="17" r="3"/><path d="m9.5 8.5 1.7 5.6m3.3-5.6-1.7 5.6"/></svg></span>
-      <span class="feature-label">Evidence graph</span>
-      <h3>Connect hidden campaigns</h3>
-      <p>Correlate domains, certificates, phone numbers and payment identifiers.</p>
-      <button type="button" class="card-link" data-open-view="discover">Investigate a brand <span aria-hidden="true">↗</span></button>
-    </article>
-    <article class="feature-card capability-card feature-wide">
-      <div><span class="feature-label">Analyst workflow</span><h3>From discovery to defensible verdict</h3><p>Prioritize findings, inspect the scoring evidence and record decisions without losing context.</p></div>
-      <div class="workflow-steps" aria-label="Workflow: collect, correlate, review">
-        <span><b>01</b> Collect</span><i></i><span><b>02</b> Correlate</span><i></i><span><b>03</b> Review</span>
-      </div>
-      <button type="button" class="card-link" data-open-view="queue">Open review queue <span aria-hidden="true">↗</span></button>
-    </article>
+  <section class="monitor-command" aria-label="Monitor guidance">
+    <span class="command-prompt">mnara@intel:~$</span>
+    <span>Search current sources, compare coverage, then save findings for review.</span>
+    <button type="button" class="command-link" data-open-view="discover">Investigate a brand →</button>
   </section>
 
   <form class="console" id="sweep-form" autocomplete="off">
@@ -220,7 +196,7 @@
 <section id="view-discover" hidden>
   <header class="view-head">
     <div>
-      <span class="eyebrow">ScamScan / OSINT</span>
+      <span class="eyebrow">Mnara / Investigate</span>
       <h1>Financial impersonation investigation</h1>
       <p>Discover across free public sources, verify safely, extract entities, and reveal connected campaigns.</p>
     </div>
@@ -268,7 +244,7 @@
 <section id="view-queue" hidden>
 
   <header class="view-head compact-head" tabindex="-1"><div>
-    <span class="eyebrow">ScamScan / Analyst review</span>
+    <span class="eyebrow">Mnara / Review queue</span>
     <h1>Review and disposition findings</h1>
     <p>Run a targeted hunt, inspect its evidence, then record a defensible analyst decision.</p>
   </div></header>
@@ -329,7 +305,7 @@
 <!-- ============================ SCORE ============================ -->
 <section id="view-score" hidden>
   <header class="view-head compact-head" tabindex="-1"><div>
-    <span class="eyebrow">ScamScan / Verification</span>
+    <span class="eyebrow">Mnara / Quick score</span>
     <h1>Verify a page or URL</h1>
     <p>Choose a safe offline text check or fetch and inspect a live public URL.</p>
   </div></header>

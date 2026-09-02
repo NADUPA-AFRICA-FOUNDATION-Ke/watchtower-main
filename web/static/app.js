@@ -292,9 +292,36 @@ radioKeys($("#window"));
    scamscan side reads watchtower's store and vice versa — so switching sides
    is only ever showing and hiding, never a state handover. */
 const VIEWS = ["sweep", "archive", "discover", "queue", "score"];
+const MODE_VIEWS = {
+  monitor: ["sweep", "archive"],
+  investigate: ["discover", "queue", "score"],
+};
+
+function setMode(mode, navigate = true) {
+  const views = MODE_VIEWS[mode] || MODE_VIEWS.monitor;
+  document.querySelectorAll(".mode-tab").forEach((button) => {
+    const active = button.dataset.mode === mode;
+    button.classList.toggle("is-on", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll(".side-group").forEach((group) => {
+    group.hidden = !views.includes(group.querySelector(".tab")?.dataset.view);
+  });
+  const current = document.querySelector(".tab.is-on")?.dataset.view;
+  if (!views.includes(current) && navigate) {
+    document.querySelector(`.tab[data-view="${views[0]}"]`)?.click();
+  } else if (navigate && location.hash !== `#${current}`) {
+    location.hash = current;
+  }
+}
+
+document.querySelectorAll(".mode-tab").forEach((button) => {
+  button.addEventListener("click", () => setMode(button.dataset.mode));
+});
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.onclick = () => {
+    setMode(tab.dataset.side === "scamscan" ? "investigate" : "monitor", false);
     document.querySelectorAll(".tab").forEach((t) => {
       t.classList.remove("is-on");
       t.removeAttribute("aria-current");
@@ -305,13 +332,15 @@ document.querySelectorAll(".tab").forEach((tab) => {
       const section = document.getElementById(`view-${v}`);
       if (section) section.hidden = tab.dataset.view !== v;
     });
-    $("#rail-name").textContent = tab.dataset.side === "scamscan" ? "SCAMSCAN" : "MNARA";
+    $("#rail-name").textContent = "MNARA";
     if (location.hash !== `#${tab.dataset.view}`) location.hash = tab.dataset.view;
     const heading = document.querySelector(`#view-${tab.dataset.view} .view-head`);
     if (heading) heading.focus();
     if (tab.dataset.view === "queue") loadQueue();
   };
 });
+
+setMode("monitor", false);
 
 function openHashView() {
   const view = location.hash.slice(1);
