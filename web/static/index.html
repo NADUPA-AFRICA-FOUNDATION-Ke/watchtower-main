@@ -132,6 +132,9 @@
       <fieldset class="control control-wide">
         <legend>Open sources</legend>
         <div class="chips" id="sources"></div>
+        <div class="source-catalog" id="source-catalog" aria-live="polite">
+          <span id="source-selection-count" class="source-selection-count">0 selected</span>
+        </div>
       </fieldset>
 
       <fieldset class="control sanctions-control" id="sanctions-section">
@@ -144,9 +147,9 @@
 
       <fieldset class="control">
         <legend>Depth</legend>
-        <label class="toggle">
+      <label class="toggle">
           <input type="checkbox" id="fetch-bodies">
-          <span>Read full articles</span>
+          <span>Read full articles <small>(recommended)</small></span>
         </label>
         <label class="toggle">
           <input type="checkbox" id="use-ai" checked>

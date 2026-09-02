@@ -24,6 +24,10 @@ let previewUrls = new Set();
 /* ------------------------------------------------------------ bootstrap */
 
 async function init() {
+  // Match the terminal's default: body text is required for useful scoring.
+  // Keep the HTML control unchecked for a fast no-JS fallback, then opt in once
+  // the capability handshake confirms this is the interactive monitor.
+  $("#fetch-bodies").checked = true;
   let data;
   try {
     data = await (await fetch("/api/sources")).json();
@@ -67,11 +71,12 @@ async function init() {
   const box = $("#sources");
   const sanctionsBox = $("#sanctions-source");
   const sanctionsNote = $("#sanctions-note");
+  const monitorSources = data.sources.filter((s) => s.surface !== "investigation");
   // Investigation providers (DNS, RDAP, CT, threat intelligence, etc.) pivot
   // from domains and belong to the Discover workflow. They used to appear as
   // Monitor chips even though /api/sweep cannot execute them; selecting one
   // made the entire EventSource request fail with "unknown source".
-  data.sources.filter((s) => s.surface !== "investigation").forEach((s) => {
+  monitorSources.forEach((s) => {
     const isSanctions = s.name === "opensanctions";
     const chip = el("button", "chip", isSanctions ? "OpenSanctions" : s.name);
     chip.type = "button";
@@ -99,9 +104,11 @@ async function init() {
       const on = chip.classList.contains("is-on");
       chip.setAttribute("aria-pressed", String(on));
       on ? selected.add(s.name) : selected.delete(s.name);
+      updateSourceCatalog();
     };
     (isSanctions ? sanctionsBox : box).append(chip);
   });
+  renderSourceCatalog(monitorSources);
 
   // On a serverless host the archive lives in /tmp and does not survive between
   // requests. Saying nothing would let someone tick "Keep results", see it
@@ -133,6 +140,30 @@ async function init() {
     $("#ai-status").textContent = provider
       ? `scoring ready — ${provider}` : "scoring ready";
   }
+}
+
+function updateSourceCatalog() {
+  const count = $("#source-selection-count");
+  if (count) count.textContent = `${selected.size} selected`;
+}
+
+function renderSourceCatalog(sources) {
+  const box = $("#source-catalog");
+  if (!box) return;
+  box.replaceChildren();
+  const summary = el("span", "source-selection-count", `${selected.size} selected`);
+  summary.id = "source-selection-count";
+  box.append(summary);
+  sources.forEach((source) => {
+    const row = el("div", "source-catalog-row");
+    const name = el("strong", null, source.name);
+    const detail = el("span", null, source.description || "Public source adapter");
+    const state = source.available === false
+      ? `needs ${source.key_name || "credentials"}`
+      : source.default ? "included by default" : "optional";
+    row.append(name, detail, el("small", source.available === false ? "source-state unavailable" : "source-state", state));
+    box.append(row);
+  });
 }
 
 async function refreshSystemHealth(sourceData = capabilities) {

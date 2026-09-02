@@ -207,6 +207,22 @@ def list_sources():
             "available": has_credentials(n),
             "key_name": BACKEND_KEYS.get(n, ""),
             "surface": "monitor",
+            "description": {
+                "gdelt": "Global news and broadcasts with a short delay",
+                "google_news": "Broad local and international news coverage",
+                "wikipedia": "Entity background and disambiguation context",
+                "hackernews": "Technology and fintech community discussions",
+                "mastodon": "Public posts from federated social networks",
+                "gleif": "Legal entity identifiers and ownership records",
+                "sec_edgar": "US company filings and regulatory disclosures",
+                "web_search": "Broad web discovery through Brave Search",
+                "opensanctions": "Sanctions, PEP and watchlist records",
+                "opencorporates": "Global company registry records",
+                "bluesky": "Public posts through the official Bluesky API",
+                "reddit": "Subreddit search through the official Reddit API",
+                "x": "Posts through X's official API (paid access)",
+                "socialcrawl": "Cross-platform social discovery (paid credits)",
+            }.get(n, "Public source adapter"),
         }
         for n in BACKENDS
     ]
