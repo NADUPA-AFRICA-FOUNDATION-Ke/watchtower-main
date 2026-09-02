@@ -6,7 +6,8 @@ import httpx
 import pytest
 
 from core.fetch import Fetcher
-from core.sources import SourceError, SourceSkipped, socialcrawl
+from core.sources import (SourceError, SourceSkipped, social_web_index,
+                          socialcrawl)
 
 
 def _fetcher(handler) -> Fetcher:
@@ -85,6 +86,18 @@ def test_socialcrawl_reports_unusable_paid_results(monkeypatch):
     }))
     with pytest.raises(SourceError, match="none had a usable URL"):
         socialcrawl("query", fetcher)
+
+
+def test_free_social_index_maps_public_platform_results(monkeypatch):
+    monkeypatch.setattr("osint_discovery.search_duckduckgo", lambda query, max_results: [
+        {"title": "M-Pesa scam alert", "url": "https://www.tiktok.com/@watch/1",
+         "summary": "Fake M-Pesa offer"},
+        {"title": "Unrelated", "url": "https://example.com/page", "summary": ""},
+    ])
+    items = social_web_index("M-Pesa scam", _fetcher(lambda request: httpx.Response(500)))
+    assert len(items) == 1
+    assert items[0].source == "social_web_index"
+    assert items[0].raw_meta["platform"] == "tiktok.com"
 
 
 def test_socialcrawl_surfaces_402_credit_details(monkeypatch):

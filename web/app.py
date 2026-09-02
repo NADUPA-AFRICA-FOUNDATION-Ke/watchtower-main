@@ -214,6 +214,7 @@ def list_sources():
                 "wikipedia": "Entity background and disambiguation context",
                 "hackernews": "Technology and fintech community discussions",
                 "mastodon": "Public posts from federated social networks",
+                "social_web_index": "Free public social links found through web indexing",
                 "gleif": "Legal entity identifiers and ownership records",
                 "sec_edgar": "US company filings and regulatory disclosures",
                 "web_search": "Broad web discovery through Brave Search",

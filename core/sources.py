@@ -231,6 +231,48 @@ def mastodon(query: str, fetcher: Fetcher, hours: int = 72,
     return [i for i in out if i.url]
 
 
+# ------------------------------------------------------ Free social index
+
+def social_web_index(query: str, fetcher: Fetcher, hours: int = 72,
+                     limit: int = 20) -> list[Item]:
+    """Find public social URLs through an unauthenticated web index.
+
+    This complements the authenticated/paid social APIs: it never bypasses a
+    platform login or robots policy and is intentionally labelled as indexed
+    leads. It is free, broad (TikTok, Instagram, Facebook, Telegram, WhatsApp,
+    X and YouTube), and useful when platform APIs are unavailable.
+    """
+    import osint_discovery
+
+    sites = ("tiktok.com", "instagram.com", "facebook.com", "t.me",
+             "wa.me", "x.com", "youtube.com")
+    indexed_query = f'"{query}" (' + " OR ".join(f"site:{site}" for site in sites) + ")"
+    try:
+        rows = osint_discovery.search_duckduckgo(indexed_query, max_results=min(limit, 30))
+    except Exception as exc:
+        raise SourceError(str(exc)) from exc
+
+    out, seen = [], set()
+    for row in rows or []:
+        url = str(row.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        host = url.split("/", 3)[2].lower() if "://" in url else ""
+        if not any(host == site or host.endswith("." + site) for site in sites):
+            continue
+        seen.add(url)
+        out.append(Item(
+            url=url,
+            source="social_web_index",
+            source_type="social",
+            title=_strip_tags(str(row.get("title") or ""))[:200],
+            text=_strip_tags(str(row.get("summary") or ""))[:2000],
+            raw_meta={"platform": next((site for site in sites if host == site or host.endswith("." + site)), "social") ,
+                      "indexed": True},
+        ))
+    return out[:limit]
+
+
 # -------------------------------------------------------------- SEC EDGAR
 
 def sec_edgar(query: str, fetcher: Fetcher, hours: int = 0,
@@ -732,6 +774,7 @@ BACKENDS = {
     "wikipedia": wikipedia,
     "hackernews": hackernews,
     "mastodon": mastodon,
+    "social_web_index": social_web_index,
     "bluesky": bluesky,
     "reddit": reddit,
     "x": x_twitter,

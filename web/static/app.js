@@ -97,7 +97,7 @@ async function init() {
   const socialBox = $("#social-source");
   const socialNote = $("#social-note");
   const monitorSources = data.sources.filter((s) => s.surface !== "investigation");
-  const socialNames = new Set(["socialcrawl", "mastodon", "bluesky", "reddit", "x"]);
+  const socialNames = new Set(["social_web_index", "socialcrawl", "mastodon", "bluesky", "reddit", "x"]);
   // Investigation providers (DNS, RDAP, CT, threat intelligence, etc.) pivot
   // from domains and belong to the Discover workflow. They used to appear as
   // Monitor chips even though /api/sweep cannot execute them; selecting one
@@ -111,7 +111,10 @@ async function init() {
     // default. opensanctions is both, so the old `needs_key && !default` guard
     // never fired and it shipped selected but dead.
     const usable = s.available !== false;
-    const on = s.default && usable;
+    // The free indexed-social adapter is opt-in for CLI sweeps (it uses an
+    // external search client), but the web's Social media signals mode should
+    // work out of the box without a paid key.
+    const on = (s.default || s.name === "social_web_index") && usable;
     chip.setAttribute("aria-pressed", String(on));
     if (on) { chip.classList.add("is-on"); selected.add(s.name); }
     if (!usable) {
@@ -131,6 +134,9 @@ async function init() {
     } else if (socialNames.has(s.name) && s.name === "socialcrawl") {
       socialNote.textContent =
         "Ready — SocialCrawl searches public posts across supported networks. Each request consumes credits.";
+    } else if (s.name === "social_web_index") {
+      socialNote.textContent =
+        "Ready — free indexed social leads across TikTok, Instagram, Facebook, Telegram, WhatsApp, X and YouTube.";
     }
     chip.onclick = () => {
       chip.classList.toggle("is-on");
