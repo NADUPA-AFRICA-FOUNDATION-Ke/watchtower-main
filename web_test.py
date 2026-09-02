@@ -495,6 +495,8 @@ def main():
                     "/api/scan",
                     "/api/stats",
                 )))
+    ok &= check("terminal active navigation labels keep contrast",
+                re.search(r'\[data-theme="terminal"\] \.tab\.is-on\s*\{[^}]*color:\s*#0a0a0a;[^}]*background:\s*var\(--ink\)', css) is not None)
 
     print("\ntwo sides, one page")
     sides = set(re.findall(r'data-side="(\w+)"', html))

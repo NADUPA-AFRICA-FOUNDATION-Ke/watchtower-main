@@ -1523,6 +1523,17 @@ textarea#score-text { min-height: 148px; padding: 15px 16px; border-color: #d8db
 [data-theme="terminal"] .tab { color: var(--muted); border-bottom-color: transparent; }
 [data-theme="terminal"] .tab.is-on,
 [data-theme="terminal"] .tab:hover { color: var(--ink); text-shadow: 0 0 5px rgba(51,255,0,.5); }
+[data-theme="terminal"] .tab.is-on {
+  /* The active tab has a green surface. Keep its label dark instead of
+     inheriting the green foreground, which made the left rail read blank. */
+  color: #0a0a0a;
+  background: var(--ink);
+  text-shadow: none;
+}
+[data-theme="terminal"] .tab:hover:not(.is-on) {
+  color: var(--ink);
+  background: var(--sunk);
+}
 [data-theme="terminal"] .tab.is-on { border-bottom-color: var(--ink); }
 [data-theme="terminal"] .privacy-pill,
 [data-theme="terminal"] .method-badge,
