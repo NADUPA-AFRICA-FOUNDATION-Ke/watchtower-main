@@ -442,6 +442,17 @@ def main():
     ok &= check("interactive sweeps use fast defaults",
                 not re.search(r'id="fetch-bodies"[^>]*checked', html)
                 and "limit: 20" in js)
+    ok &= check("monitor exposes the complete lookback range",
+                all(f'data-h="{hours}"' in html for hours in ("24", "72", "168", "720", "2160", "4320", "8760")))
+    ok &= check("monitor exposes result and model budgets",
+                all(identifier in html for identifier in ('id="sweep-limit"', 'id="max-ai"'))
+                and "sweepLimit" in js and "maxAi" in js)
+    ok &= check("source presets and preference persistence are wired",
+                all(identifier in html for identifier in ('id="sources-default"', 'id="sources-all"', 'id="sources-none"', 'id="reset-controls"'))
+                and "mnara-monitor-preferences" in js)
+    ok &= check("investigation exposes a no-cost plan-only run",
+                'id="dry-run-hunt"' in html and "dry_run=${dryRun}" in js
+                and "PLAN ONLY" in js)
     # Source-controlled text (titles, URL slugs, entity names) has no spaces to
     # wrap at. Without these the longest token sets the column width and the
     # whole page scrolls sideways — worst at 380px. See the note in style.css.

@@ -865,13 +865,16 @@ def scamscan_score(payload: dict = Body(...)):
 
 
 @app.get("/api/scamscan/hunt")
-def scamscan_hunt(topics: int = Query(1, ge=1, le=20)):
+def scamscan_hunt(topics: int = Query(1, ge=1, le=20),
+                  dry_run: bool = Query(False)):
     """Run a discovery pass, streaming the same progress dicts the CLI prints.
 
     Costs real money per query — web search is billed separately from tokens —
     so `topics` is capped and the UI states the ceiling before you click.
+    `dry_run=true` expands and streams the planned queries without searching,
+    saving findings, or spending search credits.
     """
-    if EPHEMERAL:
+    if EPHEMERAL and not dry_run:
         raise HTTPException(
             409, "hunts require durable storage so findings and verdicts are retained"
         )
@@ -889,9 +892,13 @@ def scamscan_hunt(topics: int = Query(1, ge=1, le=20)):
     def work():
         con = None
         try:
-            con = scamscan.db_connect(str(data_path("scamscan.db")))
+            # A plan-only run must not create or mutate the persistent queue,
+            # including on ephemeral deployments where the disk is temporary.
+            con = scamscan.db_connect(":memory:" if dry_run
+                                      else str(data_path("scamscan.db")))
             holder["summary"] = scamscan.hunt(
-                scamscan.make_client(which), cfg, con, topics, events.put
+                scamscan.make_client(which), cfg, con, topics, events.put,
+                dry_run=dry_run,
             )
         except Exception as e:
             holder["error"] = f"{type(e).__name__}: {e}"

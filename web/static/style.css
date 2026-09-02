@@ -325,6 +325,44 @@ main { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
+.source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: -2px 0 9px;
+}
+.text-button, .secondary-button {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.text-button:hover, .secondary-button:hover { color: var(--ink); background: var(--sunk); }
+.text-button:focus-visible, .secondary-button:focus-visible {
+  outline: 2px solid var(--low);
+  outline-offset: 2px;
+}
+.budget-control { max-width: 330px; }
+.standalone-field {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  margin-bottom: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  background: var(--surface);
+}
+.standalone-field:focus-within { border-left-color: var(--low); }
+.standalone-field input { border: 0; background: transparent; text-align: right; }
+.reset-controls { align-self: end; }
+
 .chip {
   font-family: var(--mono);
   font-size: 12px;

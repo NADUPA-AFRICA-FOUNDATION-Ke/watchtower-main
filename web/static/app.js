@@ -20,6 +20,33 @@ let hours = 72;
 let stream = null;
 let capabilities = {};
 let previewUrls = new Set();
+let sweepLimit = 20;
+let maxAi = 8;
+
+const MONITOR_PREFS_KEY = "mnara-monitor-preferences";
+
+function readMonitorPrefs() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(MONITOR_PREFS_KEY) || "null");
+    return value && typeof value === "object" ? value : {};
+  } catch { return {}; }
+}
+
+function saveMonitorPrefs() {
+  try {
+    window.localStorage.setItem(MONITOR_PREFS_KEY, JSON.stringify({
+      hours, sweepLimit, maxAi, sources: [...selected],
+    }));
+  } catch { /* private browsing may disable storage; controls still work */ }
+}
+
+function syncSourceChips() {
+  document.querySelectorAll("#sweep-form [data-source]").forEach((chip) => {
+    const on = selected.has(chip.dataset.source);
+    chip.classList.toggle("is-on", on);
+    chip.setAttribute("aria-pressed", String(on));
+  });
+}
 
 /* ------------------------------------------------------------ appearance */
 
@@ -143,9 +170,31 @@ async function init() {
       const on = chip.classList.contains("is-on");
       chip.setAttribute("aria-pressed", String(on));
       on ? selected.add(s.name) : selected.delete(s.name);
+      saveMonitorPrefs();
     };
     (isSanctions ? sanctionsBox : socialNames.has(s.name) ? socialBox : box).append(chip);
   });
+
+  // Keep a user's source mix and depth settings between visits, but discard
+  // providers that are no longer in the server capability response.
+  const prefs = readMonitorPrefs();
+  if (Number.isInteger(Number(prefs.hours)) && Number(prefs.hours) >= 24 && Number(prefs.hours) <= 8760) {
+    hours = Number(prefs.hours);
+    const windowButton = document.querySelector(`#window button[data-h="${hours}"]`);
+    if (windowButton) windowButton.click();
+  }
+  if (Number.isInteger(Number(prefs.sweepLimit))) sweepLimit = Math.max(1, Math.min(250, Number(prefs.sweepLimit)));
+  if (Number.isInteger(Number(prefs.maxAi))) maxAi = Math.max(0, Math.min(100, Number(prefs.maxAi)));
+  $("#sweep-limit").value = sweepLimit;
+  $("#max-ai").value = maxAi;
+  if (Array.isArray(prefs.sources)) {
+    const available = new Set(data.sources.filter((s) => s.available !== false).map((s) => s.name));
+    selected = new Set(prefs.sources.filter((name) => available.has(name)));
+    syncSourceChips();
+  }
+  // Persist normalized values after applying preferences. This prevents the
+  // lookback button handler from overwriting a saved source mix during restore.
+  saveMonitorPrefs();
 
   // On a serverless host the archive lives in /tmp and does not survive between
   // requests. Saying nothing would let someone tick "Keep results", see it
@@ -248,6 +297,7 @@ $("#window").onclick = (e) => {
   b.classList.add("is-on");
   b.setAttribute("aria-checked", "true");
   hours = Number(b.dataset.h);
+  saveMonitorPrefs();
 };
 
 function radioKeys(group, apply) {
@@ -267,6 +317,54 @@ function radioKeys(group, apply) {
   });
 }
 radioKeys($("#window"));
+
+function setSources(mode) {
+  const sourceNodes = [...document.querySelectorAll("#sweep-form [data-source]")];
+  if (mode === "none") {
+    selected = new Set();
+  } else if (mode === "all") {
+    selected = new Set(sourceNodes.filter((node) => !node.disabled).map((node) => node.dataset.source));
+  } else {
+    selected = new Set(sourceNodes.filter((node) =>
+      !node.disabled && (node.dataset.source === "social_web_index" ||
+        capabilities.sources?.find((source) => source.name === node.dataset.source)?.default)
+    ).map((node) => node.dataset.source));
+  }
+  syncSourceChips();
+  saveMonitorPrefs();
+}
+
+$("#sources-default").onclick = () => setSources("default");
+$("#sources-all").onclick = () => setSources("all");
+$("#sources-none").onclick = () => setSources("none");
+
+function resetMonitorControls() {
+  hours = 72;
+  const windowButton = $("#window button[data-h='72']");
+  if (windowButton) windowButton.click();
+  sweepLimit = 20; maxAi = 8;
+  $("#sweep-limit").value = sweepLimit;
+  $("#max-ai").value = maxAi;
+  $("#fetch-bodies").checked = true;
+  $("#use-ai").checked = capabilities.ai_available !== false;
+  $("#keep").checked = false;
+  setSources("default");
+}
+
+$("#sweep-limit").addEventListener("change", () => {
+  sweepLimit = Math.max(1, Math.min(250, Number($("#sweep-limit").value) || 20));
+  $("#sweep-limit").value = sweepLimit;
+  saveMonitorPrefs();
+});
+$("#max-ai").addEventListener("change", () => {
+  maxAi = Math.max(0, Math.min(100, Number($("#max-ai").value) || 0));
+  $("#max-ai").value = maxAi;
+  saveMonitorPrefs();
+});
+$("#fetch-bodies").addEventListener("change", saveMonitorPrefs);
+$("#use-ai").addEventListener("change", saveMonitorPrefs);
+$("#keep").addEventListener("change", saveMonitorPrefs);
+$("#reset-controls").onclick = resetMonitorControls;
 
 /* Two tools, one front door. The views are independent — nothing on the
    scamscan side reads watchtower's store and vice versa — so switching sides
@@ -384,12 +482,12 @@ function startSweep(q) {
     sources: [...selected].join(","),
     use_ai: $("#use-ai").checked,
     fetch_bodies: $("#fetch-bodies").checked,
-    // Fast interactive default; deep CLI runs can still request more.
-    limit: 20,
-    // Model calls are serial and each can take seconds. Eight gives the UI a
-    // useful ranked sample without turning an interactive monitor into a
-    // several-minute batch job. Deep CLI/API runs can explicitly request more.
-    max_ai: 8,
+    // Fast interactive default is limit: 20; users can raise it in Result
+    // budget without needing to leave the web application.
+    limit: sweepLimit,
+    // Model calls are serial and each can take seconds. Eight is the default;
+    // the control lets investigators trade explanation depth for latency.
+    max_ai: maxAi,
     // Off by default, same as the API. The Archive tab is empty until this is
     // ticked, so it's the only way to populate it from the browser.
     save: $("#keep").checked,
@@ -695,11 +793,22 @@ let huntStream = null;
 async function initScamscan() {
   let d;
   try {
-    d = await (await fetch("/api/scamscan/status")).json();
+    const response = await fetch("/api/scamscan/status");
+    d = await response.json();
   } catch {
+    $("#hunt-go").disabled = true;
+    $("#dry-run-hunt").disabled = true;
+    $("#hunt-cost").textContent = "Investigation status is unavailable; planning and hunts are disabled until the server responds.";
+    $("#hunt-cost").hidden = false;
     return;
   }
-  if (d.detail) return;               // not configured; leave the tab inert
+  if (d.detail) {
+    $("#hunt-go").disabled = true;
+    $("#dry-run-hunt").disabled = true;
+    $("#hunt-cost").textContent = d.detail;
+    $("#hunt-cost").hidden = false;
+    return;
+  }
   scam = d;
   $("#brand-name").textContent = d.brand;
 
@@ -710,6 +819,7 @@ async function initScamscan() {
   ];
   if (!d.api_available) {
     $("#hunt-go").disabled = true;
+    $("#dry-run-hunt").disabled = true;
     $("#hunt-go").title = "Set ANTHROPIC_API_KEY to run a hunt";
     notes.push("No ANTHROPIC_API_KEY is set, so a hunt cannot run. Scoring on the Score tab still works — it makes no API calls.");
   }
@@ -1268,7 +1378,12 @@ function verdictRow(item) {
 $("#hunt-form").onsubmit = (e) => {
   e.preventDefault();
   const topics = Math.max(1, Math.min(20, Number($("#topics").value) || 1));
-  startHunt(topics);
+  startHunt(topics, false);
+};
+
+$("#dry-run-hunt").onclick = () => {
+  const topics = Math.max(1, Math.min(20, Number($("#topics").value) || 1));
+  startHunt(topics, true);
 };
 
 function logLine(cls, text, title) {
@@ -1278,16 +1393,17 @@ function logLine(cls, text, title) {
   $("#hunt-log").scrollTop = $("#hunt-log").scrollHeight;
 }
 
-function startHunt(topics) {
+function startHunt(topics, dryRun = false) {
   if (huntStream) huntStream.close();
   $("#hunt-go").disabled = true;
-  $("#hunt-go").textContent = "Hunting";
+  $("#dry-run-hunt").disabled = true;
+  $("#hunt-go").textContent = dryRun ? "Planning" : "Hunting";
   $("#hunt-trace").hidden = false;
-  $("#hunt-title").textContent = `Hunting ${topics} topic${topics === 1 ? "" : "s"}`;
+  $("#hunt-title").textContent = `${dryRun ? "Planning" : "Hunting"} ${topics} topic${topics === 1 ? "" : "s"}`;
   $("#hunt-stage").textContent = "";
   $("#hunt-log").replaceChildren();
 
-  huntStream = new EventSource(`/api/scamscan/hunt?topics=${topics}`);
+  huntStream = new EventSource(`/api/scamscan/hunt?topics=${topics}&dry_run=${dryRun}`);
 
   huntStream.addEventListener("start", (ev) => {
     const d = JSON.parse(ev.data);
@@ -1317,8 +1433,9 @@ function startHunt(topics) {
   });
   huntStream.addEventListener("done", (ev) => {
     finishHunt();
-    huntSummary(JSON.parse(ev.data));
-    loadQueue();
+    const summary = JSON.parse(ev.data);
+    huntSummary(summary);
+    if (!summary.dry_run) loadQueue();
   });
   huntStream.addEventListener("failed", (ev) => {
     finishHunt();
@@ -1341,8 +1458,10 @@ $("#cancel-hunt").onclick = () => {
 
 function finishHunt() {
   if (huntStream) { huntStream.close(); huntStream = null; }
-  $("#hunt-go").disabled = !scam.api_available ? true : false;
+  $("#hunt-go").disabled = !scam.api_available || scam.ephemeral_storage;
+  $("#dry-run-hunt").disabled = !scam.api_available ? true : false;
   $("#hunt-go").textContent = "Run hunt";
+  $("#dry-run-hunt").textContent = "Plan only";
 }
 
 function huntSummary(d) {
@@ -1355,6 +1474,10 @@ function huntSummary(d) {
       d.structured_disabled);
   }
   const failures = d.failures || [];
+  if (d.dry_run) {
+    logLine("log-note", `PLAN ONLY — ${d.queries_run || 0} searches were expanded; no providers were queried and no findings were saved.`);
+    return;
+  }
   if (failures.length) {
     logLine("log-fail",
       `INCOMPLETE RUN — ${failures.length} of ${(d.queries_run || 0) + failures.length} queries did not search`);

@@ -106,11 +106,19 @@
           <button type="button" role="radio" data-h="72" class="is-on" aria-checked="true">72h</button>
           <button type="button" role="radio" data-h="168" aria-checked="false" tabindex="-1">7d</button>
           <button type="button" role="radio" data-h="720" aria-checked="false" tabindex="-1">30d</button>
+          <button type="button" role="radio" data-h="2160" aria-checked="false" tabindex="-1">90d</button>
+          <button type="button" role="radio" data-h="4320" aria-checked="false" tabindex="-1">180d</button>
+          <button type="button" role="radio" data-h="8760" aria-checked="false" tabindex="-1">1y</button>
         </div>
       </fieldset>
 
       <fieldset class="control control-wide">
         <legend>Open sources</legend>
+        <div class="source-actions" aria-label="Source selection presets">
+          <button type="button" class="text-button" id="sources-default">Use defaults</button>
+          <button type="button" class="text-button" id="sources-all">All available</button>
+          <button type="button" class="text-button" id="sources-none">Clear all</button>
+        </div>
         <div class="chips" id="sources"></div>
       </fieldset>
 
@@ -145,6 +153,23 @@
           <span>Keep results</span>
         </label>
       </fieldset>
+
+      <fieldset class="control budget-control">
+        <legend>Result budget</legend>
+        <label class="compact-field standalone-field" for="sweep-limit">
+          <span>Findings</span>
+          <input id="sweep-limit" type="number" min="1" max="250" value="20"
+                 inputmode="numeric" aria-describedby="budget-hint">
+        </label>
+        <label class="compact-field standalone-field" for="max-ai">
+          <span>Model reviews</span>
+          <input id="max-ai" type="number" min="0" max="100" value="8"
+                 inputmode="numeric" aria-describedby="budget-hint">
+        </label>
+        <p class="hint" id="budget-hint">More findings improve recall; model reviews improve explanations and may take longer.</p>
+      </fieldset>
+
+      <button type="button" class="text-button reset-controls" id="reset-controls">Reset monitor controls</button>
     </div>
   </form>
 
@@ -252,10 +277,11 @@
       <input id="topics" type="number" min="1" max="20" value="1"
              aria-describedby="hunt-hint">
       <button type="submit" id="hunt-go">Run hunt</button>
+      <button type="button" class="secondary-button" id="dry-run-hunt">Plan only</button>
     </div>
     <p class="hint" id="hunt-hint">
       Seed topics to expand, cheapest first. Web search is billed separately
-      from tokens — start with one.
+      from tokens — start with one. “Plan only” expands queries without searching or saving findings.
     </p>
     <p class="hint warn-note" id="hunt-cost" hidden></p>
   </form>
