@@ -288,6 +288,10 @@ def main() -> None:
 
     if args.command == "serve":
         import uvicorn
+        # Make the bind scope explicit to the web layer.  This lets it fail
+        # closed for public binds even when the deployment platform does not
+        # provide a recognizable hosting environment variable.
+        os.environ["WATCHTOWER_BIND_HOST"] = args.host
         print(f"\n  watchtower  ->  http://{args.host}:{args.port}\n")
         uvicorn.run("web.app:app", host=args.host, port=args.port,
                     log_level="warning")

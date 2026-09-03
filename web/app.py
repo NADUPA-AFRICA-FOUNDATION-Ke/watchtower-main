@@ -13,6 +13,7 @@ Now with async support for fast OSINT discovery using watchtower_async module.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import logging
 import os
@@ -65,9 +66,32 @@ HOSTED = bool(
     or os.environ.get("FLY_APP_NAME")
     or os.environ.get("DYNO")
 )
-REQUIRE_AUTH = HOSTED or os.environ.get("WATCHTOWER_REQUIRE_AUTH", "").lower() in {
+
+
+def _is_loopback_bind(value: str) -> bool:
+    """Return whether a bind address is unquestionably local-only."""
+    value = (value or "").strip().lower().strip("[]")
+    if value in {"localhost", "localhost.localdomain", "ip6-localhost"}:
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        # Hostnames cannot be trusted to remain local (DNS can change), so an
+        # unknown bind name is treated as public and requires authentication.
+        return False
+
+
+_EXPLICIT_AUTH = os.environ.get("WATCHTOWER_REQUIRE_AUTH", "").lower() in {
     "1", "true", "yes", "on"
 }
+# ``run.py`` records the requested bind address before importing this module.
+# The middleware also checks the ASGI server address for callers that launch
+# uvicorn directly.  Authentication must not depend on recognizing a hosting
+# provider's brand-specific environment variable.
+BIND_HOST = os.environ.get("WATCHTOWER_BIND_HOST", "")
+REQUIRE_AUTH = HOSTED or _EXPLICIT_AUTH or (
+    bool(BIND_HOST) and not _is_loopback_bind(BIND_HOST)
+)
 DATA_DIR = (
     Path(_EXPLICIT_DATA_DIR)
     if _EXPLICIT_DATA_DIR
@@ -120,6 +144,23 @@ WT_PASSWORD = os.environ.get("WATCHTOWER_PASSWORD", "")
 WT_USER = os.environ.get("WATCHTOWER_USER", "watchtower")
 
 
+def _request_requires_auth(request) -> bool:
+    if REQUIRE_AUTH:
+        return True
+    configured = os.environ.get("WATCHTOWER_BIND_HOST", "")
+    if configured:
+        return not _is_loopback_bind(configured)
+    # Uvicorn exposes its configured bind address in the ASGI scope.  This
+    # catches direct ``uvicorn web.app:app --host 0.0.0.0`` launches too.
+    server = request.scope.get("server") or ()
+    server_host = server[0] if server else ""
+    if server_host == "testserver" and request.client and request.client.host == "testclient":
+        # Starlette's in-process TestClient is not a network listener.
+        return False
+    # An absent server address is not proof that the listener is local.
+    return True if not server_host else not _is_loopback_bind(server_host)
+
+
 @app.middleware("http")
 async def require_password(request, call_next):
     """HTTP Basic, but only once the app is off localhost.
@@ -138,7 +179,7 @@ async def require_password(request, call_next):
     if request.url.path == "/api/healthz":
         return await call_next(request)
 
-    if not REQUIRE_AUTH:
+    if not _request_requires_auth(request):
         return await call_next(request)
 
     if not WT_PASSWORD:
@@ -1198,7 +1239,8 @@ def get_report(name: str):
     out_dir = data_path(cfg["storage"].get("output_dir", "out")).resolve()
     path = (out_dir / name).resolve()
     # Contain path traversal: the resolved path must stay inside out_dir.
-    if not str(path).startswith(str(out_dir)) or not path.is_file():
+    if (path == out_dir or out_dir not in path.parents or not path.is_file()
+            or path.suffix.lower() not in {".md", ".html"}):
         raise HTTPException(404, "report not found")
     media_type = "text/html" if path.suffix.lower() == ".html" else "text/markdown"
     return FileResponse(path, media_type=media_type, filename=name)

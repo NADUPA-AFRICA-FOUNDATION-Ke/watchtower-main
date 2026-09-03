@@ -10,6 +10,18 @@ const el = (t, cls, txt) => {
   return n;
 };
 
+// Provider and page-inspection URLs are untrusted evidence.  Keep them
+// clickable for normal web links, but never turn a javascript:, data:, file:
+// or other active-content value into an executable anchor.
+function safeHref(value) {
+  if (typeof value !== "string" || !value.trim()) return "#";
+  try {
+    const parsed = new URL(value, window.location.origin);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.href : "#";
+  } catch { return "#"; }
+}
+
 const BAND_COLOUR = {
   HIGH: "var(--high)", MED: "var(--med)", LOW: "var(--low)", WEAK: "var(--weak)",
 };
@@ -602,7 +614,7 @@ function card(item) {
 
   const h = el("h3");
   const a = el("a", null, item.title || "(untitled)");
-  a.href = item.url;
+  a.href = safeHref(item.url);
   a.target = "_blank";
   a.rel = "noopener noreferrer";
   h.append(a);
@@ -1092,7 +1104,7 @@ function investigationCard(item) {
     el("span", "flag", item.machine_verdict || "INSUFFICIENT_EVIDENCE"));
   c.append(top);
   const title = el("h3");
-  const link = el("a", null, item.domain); link.href = item.url; link.target = "_blank";
+  const link = el("a", null, item.domain); link.href = safeHref(item.url); link.target = "_blank";
   link.rel = "noopener noreferrer"; title.append(link); c.append(title);
   c.append(el("p", "card-meta", `${Math.round((item.confidence || 0) * 100)}% confidence · ` +
     `${item.evidence_count || 0} direct evidence records`));
@@ -1154,7 +1166,7 @@ async function openEntityDetail(id) {
         el("span", "tag", item.source), el("p", null, item.observed_value || "Observed"));
       if (item.source_url) {
         const link = el("a", null, "Open source");
-        link.href = item.source_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+        link.href = safeHref(item.source_url); link.target = "_blank"; link.rel = "noopener noreferrer";
         record.append(link);
       }
       list.append(record);
@@ -1279,7 +1291,7 @@ function discoveryCard(item) {
 
   const h = el("h3");
   const a = el("a", null, item.title || item.url || "(untitled candidate)");
-  a.href = item.url;
+  a.href = safeHref(item.url);
   a.target = "_blank";
   a.rel = "noopener noreferrer";
   h.append(a);
@@ -1321,7 +1333,7 @@ function queueCard(item) {
 
   const h = el("h3");
   const a = el("a", null, item.title || item.url || "(untitled)");
-  a.href = item.url;
+  a.href = safeHref(item.url);
   a.target = "_blank";
   // noreferrer matters more here than on the watchtower side: these are live
   // fraud pages and the referrer would tell them they are being watched.

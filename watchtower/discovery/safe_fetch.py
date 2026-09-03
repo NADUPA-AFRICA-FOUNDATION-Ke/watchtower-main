@@ -9,6 +9,7 @@ from typing import Callable
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+import httpcore
 
 
 ALLOWED_TYPES = {
@@ -68,6 +69,65 @@ async def resolve_public(host: str) -> list[str]:
     return addresses
 
 
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Connect only to addresses validated for the current request.
+
+    httpx normally resolves a hostname inside its transport after the caller's
+    validation has completed.  Keeping the validated addresses in this
+    network backend removes that DNS-rebinding window while preserving the
+    original hostname for HTTPS SNI and certificate verification.
+    """
+
+    def __init__(self):
+        self._backend = httpcore.AnyIOBackend()
+        self._pins: dict[str, tuple[str, ...]] = {}
+
+    def pin(self, host: str, addresses: list[str]) -> None:
+        self._pins[host.lower()] = tuple(addresses)
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None,
+                          socket_options=None):
+        addresses = self._pins.get(str(host).lower())
+        if not addresses:
+            raise httpcore.ConnectError("hostname was not pinned after SSRF validation")
+        last_error = None
+        for address in addresses:
+            try:
+                return await self._backend.connect_tcp(
+                    address, port, timeout, local_address, socket_options
+                )
+            except Exception as exc:  # try another validated A/AAAA answer
+                last_error = exc
+        raise httpcore.ConnectError(str(last_error or "all validated addresses failed"))
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise httpcore.ConnectError("unix sockets are not allowed by SafeFetcher")
+
+    async def sleep(self, seconds):
+        await self._backend.sleep(seconds)
+
+
+class _PinnedTransport(httpx.AsyncBaseTransport):
+    """httpx transport whose DNS lookups are supplied by SafeFetcher."""
+
+    def __init__(self):
+        self.backend = _PinnedNetworkBackend()
+        self._transport = httpx.AsyncHTTPTransport(trust_env=False)
+        # AsyncHTTPTransport creates a direct AsyncConnectionPool when
+        # trust_env=False. Replacing only its backend retains httpx's TLS,
+        # HTTP/2 and connection-pool behavior without duplicating internals.
+        self._transport._pool._network_backend = self.backend
+
+    def pin(self, host: str, addresses: list[str]) -> None:
+        self.backend.pin(host, addresses)
+
+    async def handle_async_request(self, request):
+        return await self._transport.handle_async_request(request)
+
+    async def aclose(self):
+        await self._transport.aclose()
+
+
 class SafeFetcher:
     """Bounded HTTP fetcher that validates every redirect destination."""
 
@@ -83,8 +143,10 @@ class SafeFetcher:
         cache_ttl: int = 21600,
     ):
         self._owns_client = client is None
+        self._pinned_transport = _PinnedTransport() if client is None else None
         self.client = client or httpx.AsyncClient(
-            timeout=timeout, follow_redirects=False,
+            timeout=timeout, follow_redirects=False, trust_env=False,
+            transport=self._pinned_transport,
             headers={"User-Agent": user_agent, "Accept": "text/html,text/plain;q=0.8"},
         )
         self.resolver = resolver
@@ -110,7 +172,12 @@ class SafeFetcher:
                 raise UnsafeTarget("only HTTP(S) URLs are fetchable")
             if parsed.username or parsed.password:
                 raise UnsafeTarget("credential-bearing URLs are not fetchable")
-            await self.resolver(parsed.hostname or "")
+            host = parsed.hostname or ""
+            addresses = list(await self.resolver(host))
+            if not addresses or not all(_public_ip(address) for address in addresses):
+                raise UnsafeTarget("target resolves to a non-public address")
+            if self._pinned_transport:
+                self._pinned_transport.pin(host, addresses)
             chain.append(url)
             try:
                 async with self.client.stream("GET", url) as response:

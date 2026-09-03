@@ -32,7 +32,33 @@ def _short(text: str, n: int) -> str:
 
 def _cell(value: object) -> str:
     """Keep user/provider text from breaking Markdown tables."""
-    return " ".join(str(value or "").split()).replace("|", "\\|")
+    return _md_text(value)
+
+
+def _md_text(value: object) -> str:
+    """Escape provider/page text before placing it in a Markdown document."""
+    text = " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
+    # Escape the characters that can introduce links, HTML, emphasis, code or
+    # table structure.  Reports are often opened in capable Markdown viewers,
+    # so scraped content must remain data rather than executable markup.
+    return re.sub(r"([\\`*_[\]{}()<>#!|])", r"\\\1", text)
+
+
+def _md_url(value: object) -> str:
+    """Return a safe Markdown destination, or an empty string if unsafe."""
+    raw = str(value or "").strip()
+    parsed = urlsplit(raw)
+    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+            or parsed.username or parsed.password or any(ch.isspace() for ch in raw)):
+        return ""
+    return raw.replace("\\", "%5C").replace("<", "%3C").replace(">", "%3E")
+
+
+def _md_link(label: object, url: object) -> str:
+    """Render a link only when its destination is an HTTP(S) URL."""
+    text = _md_text(label)
+    destination = _md_url(url)
+    return f"[{text}](<{destination}>)" if destination else text
 
 
 def progress_line(event: dict) -> str:
@@ -140,7 +166,7 @@ def markdown(result: SweepResult) -> str:
     strong = len(result.strong)
     ranking = "AI-assisted" if result.enriched else "Keyword-only"
     md = [
-        f"# Sweep: {result.query}",
+        f"# Sweep: {_md_text(result.query)}",
         "",
         f"*Generated {stamp}*",
         "",
@@ -161,17 +187,18 @@ def markdown(result: SweepResult) -> str:
         md += ["> **Coverage warning:** This sweep is incomplete. Missing sources "
                "mean the findings are a floor, not proof that nothing else exists.", ""]
 
-    watchlist = [i for i in result.items if i.source_type == "watchlist"]
+    watchlist = [item for item in result.items if item.source_type == "watchlist"]
     if watchlist:
         md += ["## Watchlist matches", ""]
-        for i in watchlist:
-            md += [f"- **[{i.title}]({i.url})** — {i.text}"]
+        for watch_item in watchlist:
+            md += [f"- **{_md_link(watch_item.title, watch_item.url)}** — "
+                   f"{_md_text(watch_item.text)}"]
         md.append("")
 
     if result.entities:
         md += ["## Recurring names", "",
                "| Name | Mentions |", "| --- | ---: |"]
-        md += [f"| {n} | {c} |" for n, c in result.entities]
+        md += [f"| {_cell(n)} | {c} |" for n, c in result.entities]
         md.append("")
 
     ordinary = [i for i in result.items if i.source_type != "watchlist"]
@@ -180,29 +207,29 @@ def markdown(result: SweepResult) -> str:
                "| Score | Finding | Source | Published |",
                "| ---: | --- | --- | --- |"]
         for item in ordinary[:10]:
-            title = _cell(item.title or "Untitled")
+            title = item.title or "Untitled"
             published = _cell(item.published_at[:10] if item.published_at else "—")
             md.append(f"| **{band(item.relevance)} {item.relevance}** | "
-                      f"[{title}]({item.url}) | {_cell(item.source)} | {published} |")
+                      f"{_md_link(title, item.url)} | {_cell(item.source)} | {published} |")
         md.append("")
 
     md += ["## Finding details", ""]
-    for i, item in enumerate(ordinary, 1):
-        md += [f"### {i}. {item.title or '(untitled)'}", "",
+    for finding_index, item in enumerate(ordinary, 1):
+        md += [f"### {finding_index}. {_md_text(item.title or '(untitled)')}", "",
                f"**Priority:** {band(item.relevance)} ({item.relevance}/100)  ",
                f"**Source:** {_cell(item.source)}"
                + (f" · {_cell(item.published_at[:16])}" if item.published_at else "")
                + (f" · {_cell(item.author)}" if item.author else ""),
                "",
-               f"**Original:** <{item.url}>", ""]
+               f"**Original:** {_md_link(item.url, item.url)}", ""]
         if item.summary:
-            md += [f"**Summary:** {_short(item.summary, 500)}", ""]
+            md += [f"**Summary:** {_md_text(_short(item.summary, 500))}", ""]
         elif item.text:
-            md += [f"**Extract:** {_short(item.text, 240)}", ""]
+            md += [f"**Extract:** {_md_text(_short(item.text, 240))}", ""]
         if item.categories:
-            md += ["Tags: " + ", ".join(f"`{c}`" for c in item.categories), ""]
+            md += ["Tags: " + ", ".join(f"`{_md_text(c)}`" for c in item.categories), ""]
         if item.entities:
-            md += ["Entities: " + ", ".join(item.entities), ""]
+            md += ["Entities: " + ", ".join(_md_text(e) for e in item.entities), ""]
 
     md += ["## Source coverage", "",
            "| Source | Status | Hits | Detail |",
@@ -218,7 +245,7 @@ def markdown(result: SweepResult) -> str:
     md.append("")
 
     if result.errors:
-        md += ["### Errors", ""] + [f"- `{e}`" for e in result.errors] + [""]
+        md += ["### Errors", ""] + [f"- `{_md_text(e)}`" for e in result.errors] + [""]
 
     md += ["---", "",
            "Collected from public APIs and published feeds. Verify anything "
@@ -248,7 +275,6 @@ def html_report(result: SweepResult) -> str:
     searched = sum(1 for name in result.per_source
                    if name not in result.failed and name not in result.skipped)
     requested = len(result.per_source)
-    ranking = "AI-assisted" if result.enriched else "Keyword-only"
     coverage_class = "ok" if result.complete else "warn"
     rows = []
     ordinary = [item for item in result.items if item.source_type != "watchlist"]
