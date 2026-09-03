@@ -415,8 +415,15 @@ async def create_investigation(payload: dict = Body(...)):
             max_global_requests=int(inv_cfg.get("max_global_requests", 8)),
             max_external_requests=int(inv_cfg.get("max_external_requests", 500)),
         )
+        # Feed the investigation provider the same sourced language used by
+        # scam scoring. This keeps free social discovery aligned with the
+        # configured English/Kiswahili/Sheng lexicon without making providers
+        # read global configuration themselves.
+        from osint_discovery import lexicon_query_terms
+        lexicon_terms = tuple(lexicon_query_terms(scam_cfg, limit=16))
         return await engine.investigate(
-            brand, str(payload.get("query") or brand), configured_brand
+            brand, str(payload.get("query") or brand), configured_brand,
+            lexicon_terms=lexicon_terms,
         )
     finally:
         store.conn.close()
@@ -428,6 +435,7 @@ def get_investigation(investigation_id: str):
     try:
         row = store.get("investigations", investigation_id)
         runs = store.source_runs(investigation_id) if row else []
+        graph = store.graph(investigation_id) if row else {"nodes": []}
     finally:
         store.conn.close()
     if not row:
@@ -443,6 +451,29 @@ def get_investigation(investigation_id: str):
         if row.get(key):
             row[key] = json.loads(row[key])
     row["source_runs"] = runs
+    social = []
+    for node in graph.get("nodes", []):
+        if node.get("entity_type") != "social_post":
+            continue
+        metadata = node.get("metadata") or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        social.append({
+            "url": metadata.get("url") or node.get("canonical_value", "").split(":", 1)[-1],
+            "platform": node.get("platform") or metadata.get("site", "social"),
+            "source": "social_web_index",
+            "title": metadata.get("title") or node.get("display_value", ""),
+            "snippet": metadata.get("snippet", ""),
+            "query": metadata.get("query", ""),
+        })
+    row["social_findings"] = social[:120]
+    row["social_pagination"] = {
+        "page": 1, "page_size": 10, "total": len(social[:120]),
+        "has_next": len(social) > 10,
+    }
     row["zero_key_mode"] = not any(os.environ.get(key) for key in BACKEND_KEYS.values())
     return row
 

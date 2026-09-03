@@ -875,6 +875,15 @@ textarea#score-text::placeholder { color: var(--faint); }
 .graph-edges{max-height:14rem;overflow:auto;font-size:.78rem;color:var(--muted)}
 .campaign-row{border-left:3px solid var(--amber);padding-left:.7rem}
 .evidence-reasons{padding-left:1.4rem}.evidence-reasons li{margin:.35rem 0}
+.social-findings{display:grid;gap:.75rem;margin-top:.75rem}
+.social-finding{padding:.8rem;border:1px solid var(--line);border-left:3px solid var(--low);background:var(--sunk)}
+.social-finding h4{margin:0 0 .35rem;font-size:.95rem}
+.social-finding h4 a{overflow-wrap:anywhere}
+.social-finding .card-meta{margin:.2rem 0 .45rem}
+.social-finding .snippet{margin:0;color:var(--muted);font-size:.86rem;line-height:1.5}
+.social-pagination{display:flex;align-items:center;gap:.6rem;margin-top:.8rem;flex-wrap:wrap}
+.social-pagination button{min-height:34px;padding:.35rem .7rem}
+.social-pagination button:disabled{opacity:.5;cursor:not-allowed}
 
 /* ======================================================================
    Workspace redesign — feature-led bento dashboard

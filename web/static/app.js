@@ -34,6 +34,8 @@ let capabilities = {};
 let previewUrls = new Set();
 let sweepLimit = 20;
 let maxAi = 8;
+let socialFindings = [];
+let socialPage = 1;
 
 const MONITOR_PREFS_KEY = "mnara-monitor-preferences";
 
@@ -971,6 +973,9 @@ $("#discover-form").onsubmit = async (e) => {
   trace.hidden = false;
   stage.textContent = `looking for ${brand}`;
   $("#discover-summary").replaceChildren();
+  socialFindings = [];
+  socialPage = 1;
+  $("#discover-social").replaceChildren();
   out.replaceChildren();
 
   try {
@@ -1006,6 +1011,9 @@ $("#discover-form").onsubmit = async (e) => {
     renderInvestigationCoverage(d.coverage || {});
     renderInvestigationExpansion(d.expansion || {});
     renderCampaigns(d.campaigns || []);
+    socialFindings = Array.isArray(d.social_findings) ? d.social_findings : [];
+    socialPage = 1;
+    renderInvestigationSocial(socialFindings, d.social_pagination || {});
     await renderInvestigationGraph(d.id);
     if (!candidates.length) {
       const empty = el("div", "empty-inline");
@@ -1023,6 +1031,70 @@ $("#discover-form").onsubmit = async (e) => {
     button.textContent = "Find sites";
   }
 };
+
+function renderInvestigationSocial(findings, pagination = {}) {
+  const box = $("#discover-social");
+  box.replaceChildren();
+  if (!findings.length) return;
+
+  const pageSize = Math.max(1, Number(pagination.page_size) || 10);
+  const total = Math.max(findings.length, Number(pagination.total) || findings.length);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  socialPage = Math.max(1, Math.min(socialPage, pageCount));
+  const start = (socialPage - 1) * pageSize;
+  const pageItems = findings.slice(start, start + pageSize);
+
+  const title = el("h3", null, "Social media signals");
+  title.id = "discover-social-title";
+  box.append(title, el("p", "hint",
+    total + " indexed social finding" + (total === 1 ? "" : "s") + " · public web index only"));
+
+  const list = el("div", "social-findings");
+  pageItems.forEach((finding) => {
+    const article = el("article", "social-finding");
+    const heading = el("h4");
+    const link = el("a", null, finding.title || finding.url || "Untitled social finding");
+    link.href = safeHref(finding.url);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    heading.append(link);
+    article.append(heading);
+    const meta = el("p", "card-meta");
+    meta.append(el("span", null, finding.platform || "social"));
+    if (finding.author) meta.append(el("span", null, "@" + finding.author));
+    if (finding.source) meta.append(el("span", null, finding.source));
+    article.append(meta);
+    if (finding.snippet) article.append(el("p", "snippet", finding.snippet));
+    if (finding.query) article.append(el("p", "hint social-query", "Query: " + finding.query));
+    list.append(article);
+  });
+  box.append(list);
+
+  if (pageCount > 1) {
+    const nav = el("nav", "social-pagination");
+    nav.setAttribute("aria-label", "Social findings pages");
+    const previous = el("button", null, "Previous");
+    previous.type = "button";
+    previous.disabled = socialPage <= 1;
+    previous.setAttribute("aria-label", "Previous social findings page");
+    previous.addEventListener("click", () => {
+      socialPage -= 1;
+      renderInvestigationSocial(findings, pagination);
+      box.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    const next = el("button", null, "Next");
+    next.type = "button";
+    next.disabled = socialPage >= pageCount;
+    next.setAttribute("aria-label", "Next social findings page");
+    next.addEventListener("click", () => {
+      socialPage += 1;
+      renderInvestigationSocial(findings, pagination);
+      box.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    nav.append(previous, el("span", "hint", "Page " + socialPage + " of " + pageCount), next);
+    box.append(nav);
+  }
+}
 
 function renderInvestigationCoverage(coverage) {
   const box = $("#discover-coverage");

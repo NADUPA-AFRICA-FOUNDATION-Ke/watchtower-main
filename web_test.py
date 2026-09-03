@@ -76,6 +76,10 @@ def main():
                 'data-view="discover"' in r.text
                 and 'id="discover-form"' in r.text
                 and 'id="discover-results"' in r.text)
+    ok &= check("social findings have a visible paginated surface",
+                'id="discover-social"' in r.text
+                and "renderInvestigationSocial" in client.get("/app.js").text
+                and "Social findings pages" in client.get("/app.js").text)
     ok &= check("live URL scanning is available from the UI",
                 'id="scan-form"' in r.text and 'id="scan-url"' in r.text)
     ok &= check("investigation evidence has an accessible detail surface",

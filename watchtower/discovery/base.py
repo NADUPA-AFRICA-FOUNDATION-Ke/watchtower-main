@@ -20,6 +20,11 @@ class DiscoveryContext:
     aliases: tuple[str, ...] = ()
     max_results: int = 30
     depth: int = 0
+    # Sourced scam-language terms supplied by the configured brand profile.
+    # Providers may use these to build focused discovery queries without
+    # importing the full configuration (and without coupling providers to the
+    # web application).
+    lexicon_terms: tuple[str, ...] = ()
 
 
 @dataclass
@@ -46,6 +51,10 @@ class ProviderRun:
     entities: list[Entity] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
+    # Public social search rows are useful evidence even when they do not
+    # yield a domain candidate. Keep the original URL/title/snippet/query so
+    # the API and UI can show what was actually observed.
+    social_findings: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def unavailable(cls, provider: "DiscoveryProvider", status: str, detail: str):

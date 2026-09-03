@@ -10,7 +10,7 @@ import ssl
 import time
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 
@@ -249,9 +249,63 @@ class SocialWebIndexProvider(DiscoveryProvider):
     def __init__(self, search_provider=None):
         self.search_provider = search_provider or DuckDuckGoProvider()
 
+    # These are deliberately phrased as the bait a scammer publishes, rather
+    # than generic words such as "loan". They keep the free index focused on
+    # the same credential, payment, urgency and Kiswahili signals used by the
+    # local scoring lexicon.
+    DEFAULT_TERMS = (
+        "limit increase", "processing fee", "activation fee",
+        "guaranteed approval", "instant", "send your pin", "share your pin",
+        "enter your pin", "otp", "namba ya siri", "pin ya mpesa",
+        "ongeza fuliza", "lipa kwanza", "tuma pesa", "kwa hii namba",
+    )
+    FALLBACK_SITES = {"t.me", "facebook.com", "tiktok.com"}
+
     def capabilities(self):
         return ("social_web_index", "tiktok", "facebook", "instagram",
                 "telegram", "whatsapp", "x", "youtube")
+
+    @classmethod
+    def _query_terms(cls, context: DiscoveryContext) -> list[str]:
+        """Combine configured, sourced terms with a small safe fallback set."""
+        terms = [*context.lexicon_terms, *cls.DEFAULT_TERMS]
+        out, seen = [], set()
+        for raw in terms:
+            term = " ".join(str(raw or "").split()).strip().lower()
+            if len(term) < 3 or term in seen or '"' in term:
+                continue
+            seen.add(term)
+            out.append(term)
+        return out[:16]
+
+    @staticmethod
+    def _brand_terms(context: DiscoveryContext) -> list[str]:
+        terms = [context.brand, *context.aliases]
+        out, seen = [], set()
+        for raw in terms:
+            term = " ".join(str(raw or "").split()).strip()
+            key = term.lower()
+            if len(term) < 2 or key in seen or '"' in term:
+                continue
+            seen.add(key)
+            out.append(term)
+        return out[:4] or [context.brand]
+
+    @staticmethod
+    def _normalise_result_url(raw_url: str, site: str) -> str:
+        """Return a safe, stable social URL belonging to the requested site."""
+        try:
+            parsed = urlsplit(str(raw_url or "").strip())
+        except ValueError:
+            return ""
+        host = (parsed.hostname or "").lower().removeprefix("www.")
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return ""
+        if not (host == site or host.endswith("." + site)):
+            return ""
+        path = parsed.path.rstrip("/") or "/"
+        return urlunsplit((parsed.scheme, parsed.netloc.lower(), path,
+                           parsed.query, ""))
 
     async def discover(self, context):
         attempted = utcnow()
@@ -261,26 +315,84 @@ class SocialWebIndexProvider(DiscoveryProvider):
             last_attempt=attempted,
         ))
         try:
-            per_site = max(2, context.max_results // len(self.SITES))
+            per_site = max(3, min(20, context.max_results // len(self.SITES)))
+            brands = " OR ".join(f'"{term}"' for term in self._brand_terms(context))
+            signals = " OR ".join(f'"{term}"' for term in self._query_terms(context))
+            seen_urls: set[str] = set()
             for site in self.SITES:
-                rows = await self.search_provider._search(
-                    f'"{context.brand}" site:{site}', per_site,
-                )
-                for row in rows:
-                    for entity in extract_entities(
-                        " ".join((row.get("url", ""), row.get("title", ""),
-                                  row.get("summary", ""))), row.get("url", "")
-                    ):
+                query = f"({brands}) ({signals}) site:{site}"
+                rows = await self.search_provider._search(query, per_site)
+                # A targeted query is intentionally first. If an index does
+                # not support grouped OR expressions, retry this site once with
+                # a plain brand query so one parser quirk cannot erase its
+                # coverage.
+                if not rows and site in self.FALLBACK_SITES:
+                    query = f'"{context.brand}" site:{site}'
+                    rows = await self.search_provider._search(query, per_site)
+                for row in rows or []:
+                    if not isinstance(row, dict):
+                        continue
+                    url = self._normalise_result_url(row.get("url", ""), site)
+                    if not url or url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    title = " ".join(str(row.get("title") or "").split())[:240]
+                    snippet = " ".join(str(
+                        row.get("summary") or row.get("snippet") or ""
+                    ).split())[:2000]
+                    platform = {
+                        "t.me": "telegram", "wa.me": "whatsapp",
+                        "x.com": "x",
+                    }.get(site, site.split(".", 1)[0])
+                    post = Entity(
+                        "social_post", f"{platform}:{url}", title or url,
+                        platform, metadata={
+                            "url": url, "title": title, "snippet": snippet,
+                            "query": query, "site": site,
+                        }, confidence=0.55,
+                    )
+                    run.entities.append(post)
+                    post_ev = Evidence(
+                        context.investigation_id, post.id, self.name,
+                        "social_index_observation", snippet or title or url, url,
+                        {"site": site, "query": query, "title": title,
+                         "snippet": snippet, "raw_value": snippet or title or url},
+                        0.55,
+                    )
+                    run.evidence.append(post_ev)
+                    run.relationships.append(Relationship(
+                        context.investigation_id, _brand_entity(context).id,
+                        post.id, "mentions", 0.55, post_ev.id,
+                    ))
+                    extracted = extract_entities(
+                        " ".join((url, title, snippet)), url
+                    )
+                    entity_values = []
+                    for entity in extracted:
                         if entity.entity_type not in {"social_account", "phone_number"}:
                             continue
-                        ev = Evidence(context.investigation_id, entity.id, self.name,
-                                      "social_index_observation", entity.canonical_value,
-                                      row.get("url"), {"site": site}, 0.55)
-                        run.entities.append(entity); run.evidence.append(ev)
+                        entity_values.append(entity.canonical_value)
+                        ev = Evidence(
+                            context.investigation_id, entity.id, self.name,
+                            "social_index_entity", entity.canonical_value, url,
+                            {"site": site, "query": query, "title": title,
+                             "snippet": snippet}, 0.55,
+                        )
+                        run.entities.append(entity)
+                        run.evidence.append(ev)
                         run.relationships.append(Relationship(
-                            context.investigation_id, _brand_entity(context).id,
-                            entity.id, "mentions", 0.55, ev.id,
+                            context.investigation_id, post.id, entity.id,
+                            "links_to", 0.55, ev.id,
                         ))
+                    run.social_findings.append({
+                        "url": url, "platform": platform, "source": self.name,
+                        "title": title, "snippet": snippet, "query": query,
+                        "author": str(row.get("author") or "").strip()[:120],
+                        "entities": entity_values,
+                    })
+            run.health.detail = (
+                "Lexicon-targeted public index queries; direct platform crawling disabled"
+            )
         except Exception as exc:
             run.health.status = "provider_error"
             run.health.error = f"{type(exc).__name__}: {exc}"

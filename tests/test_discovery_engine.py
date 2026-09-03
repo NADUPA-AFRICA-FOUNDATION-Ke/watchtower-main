@@ -24,6 +24,7 @@ from watchtower.discovery.providers import (
     DuckDuckGoProvider,
     MastodonPublicProvider,
     RDAPProvider,
+    SocialWebIndexProvider,
     ThreatFoxProvider,
     URLhausProvider,
 )
@@ -134,6 +135,56 @@ def test_empty_public_index_is_limited_not_clean_coverage(monkeypatch):
 
     assert run.health.status == "limited"
     assert "not clean coverage" in run.health.detail
+
+
+def test_social_web_index_uses_lexicon_queries_and_preserves_findings():
+    class FakeSearch:
+        def __init__(self):
+            self.queries = []
+
+        async def _search(self, query, limit):
+            self.queries.append((query, limit))
+            if "site:t.me" in query:
+                return [{
+                    "url": "https://t.me/fuliza_limit_help/42",
+                    "title": "Fuliza limit increase",
+                    "summary": "Guaranteed increase. Processing fee via M-Pesa.",
+                    "author": "fuliza_limit_help",
+                }]
+            if "site:facebook.com" in query:
+                return [{
+                    "url": "https://facebook.com/FulizaLoans",
+                    "title": "Fuliza Loans",
+                    "summary": "Instant limit boost — message admin.",
+                }]
+            if "site:tiktok.com" in query:
+                return [{
+                    "url": "https://www.tiktok.com/@fulizahelp/video/123",
+                    "title": "ongeza Fuliza limit",
+                    "summary": "Lipa kwanza for instant access.",
+                }]
+            return []
+
+    search = FakeSearch()
+    provider = SocialWebIndexProvider(search)
+    context = DiscoveryContext(
+        "i", "Fuliza", "Fuliza", aliases=("M-PESA",), max_results=30,
+        lexicon_terms=("processing fee", "namba ya siri", "guaranteed approval"),
+    )
+    run = asyncio.run(provider.discover(context))
+
+    assert len(search.queries) >= len(provider.SITES)
+    telegram_query = next(q for q, _ in search.queries if "site:t.me" in q)
+    assert "processing fee" in telegram_query
+    assert "namba ya siri" in telegram_query
+    assert "guaranteed approval" in telegram_query
+    assert {item["platform"] for item in run.social_findings} >= {"telegram", "facebook", "tiktok"}
+    telegram = next(item for item in run.social_findings if item["platform"] == "telegram")
+    assert telegram["url"] == "https://t.me/fuliza_limit_help/42"
+    assert telegram["title"] == "Fuliza limit increase"
+    assert "Processing fee" in telegram["snippet"]
+    assert any(entity.entity_type == "social_post" for entity in run.entities)
+    assert any(e.evidence_type == "social_index_observation" for e in run.evidence)
 
 
 def test_ct_provider_creates_certificate_edges_from_fixture():
@@ -259,6 +310,33 @@ class FixtureFailure(DiscoveryProvider):
         raise TimeoutError("fixture timeout")
 
 
+class FixtureSocial(DiscoveryProvider):
+    name = "fixture_social"
+
+    def capabilities(self):
+        return ("social_web_index", "telegram", "facebook", "tiktok")
+
+    async def discover(self, context):
+        post = Entity(
+            "social_post", "telegram:https://t.me/fuliza_help/1",
+            "Fuliza limit increase", "telegram",
+            metadata={"url": "https://t.me/fuliza_help/1", "snippet": "processing fee"},
+        )
+        ev = Evidence(context.investigation_id, post.id, self.name,
+                      "social_index_observation", "processing fee",
+                      "https://t.me/fuliza_help/1", {"title": post.display_value}, 0.7)
+        run = ProviderRun(
+            SourceHealth(self.name, "web_index_only", tuple(self.capabilities()), results=1),
+            [post], [ev], [Relationship(context.investigation_id,
+                                         Entity("brand", context.brand.lower(), context.brand).id,
+                                         post.id, "mentions", 0.7, ev.id)],
+            [{"url": "https://t.me/fuliza_help/1", "platform": "telegram",
+              "title": "Fuliza limit increase", "snippet": "processing fee",
+              "query": '"Fuliza" "processing fee" site:t.me'}],
+        )
+        return run
+
+
 class FixturePivotWeb(DuckDuckGoProvider):
     """Deterministic public-index fixture for iterative rediscovery tests."""
     name = "fixture_pivot_web"
@@ -369,6 +447,23 @@ def test_full_zero_key_graph_correlation_scoring_and_provider_failure(tmp_path):
     } for item in result["candidates"])
     runs = store.source_runs(result["id"])
     assert any(row["status"] == "provider_error" for row in runs)
+
+
+def test_investigation_response_exposes_social_findings_with_pagination(tmp_path):
+    store = InvestigationStore(tmp_path / "social.db")
+    engine = DiscoveryOrchestrator(store, [FixtureSocial()], max_domains=5)
+    result = asyncio.run(engine.investigate(
+        "Fuliza", "Fuliza", {"name": "M-PESA", "aliases": ["fuliza"]},
+        lexicon_terms=("processing fee", "namba ya siri"),
+    ))
+    assert result["candidates"] == []
+    assert result["social_findings"][0]["platform"] == "telegram"
+    assert result["social_findings"][0]["title"] == "Fuliza limit increase"
+    assert result["social_pagination"] == {
+        "page": 1, "page_size": 10, "total": 1, "has_next": False,
+    }
+    graph = store.graph(result["id"])
+    assert any(node["entity_type"] == "social_post" for node in graph["nodes"])
 
 
 def test_evidence_scoring_controls_false_positives():
