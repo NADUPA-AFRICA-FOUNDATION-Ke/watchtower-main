@@ -692,9 +692,19 @@ function render(d) {
       `keyword ranking — ${d.scoring_error || "no API key"}`));
   }
   if (d.report) {
-    const link = el("a", null, "Download report");
-    link.href = `/api/report/${encodeURIComponent(d.report)}`;
-    sum.append(link);
+    const links = el("span", "report-links");
+    const markdownLink = el("a", null, "Markdown");
+    markdownLink.href = `/api/report/${encodeURIComponent(d.report)}`;
+    links.append(markdownLink);
+    if (d.report_html) {
+      const htmlLink = el("a", null, "Cyberpunk HTML / PDF");
+      htmlLink.href = `/api/report/${encodeURIComponent(d.report_html)}`;
+      htmlLink.target = "_blank";
+      htmlLink.rel = "noopener";
+      htmlLink.title = "Open the styled report, then use Print → Save as PDF";
+      links.append(htmlLink);
+    }
+    sum.append(links);
   }
 
   $("#findings").replaceChildren(...d.items.map(card));

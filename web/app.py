@@ -603,6 +603,7 @@ def run_sweep(
         if result.items:
             out_dir = data_path(cfg["storage"].get("output_dir", "out"))
             payload["report"] = report.save(result, out_dir).name
+            payload["report_html"] = Path(payload["report"]).with_suffix(".html").name
             if save:
                 store = Store(data_path(cfg["storage"]["database"]))
                 payload["saved"] = store.add(result.items)
@@ -1199,7 +1200,8 @@ def get_report(name: str):
     # Contain path traversal: the resolved path must stay inside out_dir.
     if not str(path).startswith(str(out_dir)) or not path.is_file():
         raise HTTPException(404, "report not found")
-    return FileResponse(path, media_type="text/markdown", filename=name)
+    media_type = "text/html" if path.suffix.lower() == ".html" else "text/markdown"
+    return FileResponse(path, media_type=media_type, filename=name)
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

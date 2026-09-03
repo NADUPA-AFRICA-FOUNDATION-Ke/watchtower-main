@@ -489,6 +489,8 @@ main { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
 }
 .summary strong { color: var(--ink); font-weight: 600; }
 .summary a { color: var(--low); }
+.report-links { display: inline-flex; flex-wrap: wrap; gap: 10px; }
+.report-links a { white-space: nowrap; }
 /* Coverage warning. --high is the ramp's top colour and it is doing the same
    job here: this is the most important thing on the line. */
 .summary .warn {

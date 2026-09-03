@@ -167,12 +167,17 @@ def main():
                 all(len(i["text"]) <= 600 for i in done["items"]))
     ok &= check("marks keyword-only mode", done["enriched"] is False)
     ok &= check("names the written report", done.get("report", "").endswith(".md"))
+    ok &= check("names the print-ready HTML report", done.get("report_html", "").endswith(".html"))
 
     print("\nreport download")
     r2 = client.get(f"/api/report/{done['report']}")
     ok &= check("report downloads", r2.status_code == 200)
     ok &= check("report has content", r2.text.startswith("# Sweep:"))
     (Path(__file__).parent / "out" / done["report"]).unlink(missing_ok=True)
+    r3 = client.get(f"/api/report/{done['report_html']}")
+    ok &= check("styled report downloads as HTML", r3.status_code == 200
+                and "@media print" in r3.text and "MNARA" in r3.text)
+    (Path(__file__).parent / "out" / done["report_html"]).unlink(missing_ok=True)
 
     print("\nno results path")
     r3 = client.get("/api/sweep?q=zzzz nothing&sources=sec_edgar&use_ai=false")

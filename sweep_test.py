@@ -284,6 +284,7 @@ def main():
     out = report.save(res, "out_test")
     ok &= check("report file written", out.exists() and out.stat().st_size > 400)
     out.unlink()
+    out.with_suffix(".html").unlink(missing_ok=True)
     out.parent.rmdir()
 
     print("\nper-domain rate limiting under concurrency")
