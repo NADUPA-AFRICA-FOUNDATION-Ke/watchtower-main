@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -26,6 +27,8 @@ EntityType = Literal[
     "hosting_provider",
     "company",
     "app",
+    "username", "messaging_account", "repository", "organization", "person",
+    "file", "hash", "page", "wallet",
 ]
 
 
@@ -68,9 +71,16 @@ class Evidence:
     confidence: float = 1.0
     observed_at: str = field(default_factory=now)
     id: str = ""
+    retrieved_at: str = field(default_factory=now)
+    source_published_at: str | None = None
+    content_hash: str = ""
 
     def __post_init__(self):
-        basis = f"{self.investigation_id}|{self.entity_id}|{self.source}|{self.evidence_type}|{self.observed_value}|{self.source_url}"
+        # Hash only observed source material, never mutable AI interpretations.
+        payload = json.dumps({"value": self.observed_value, "url": self.source_url,
+                              "raw": self.raw_metadata}, sort_keys=True, ensure_ascii=False)
+        self.content_hash = hashlib.sha256(payload.encode()).hexdigest()
+        basis = f"{self.investigation_id}|{self.entity_id}|{self.source}|{self.evidence_type}|{self.observed_value}|{self.source_url}|{self.content_hash}"
         self.id = self.id or stable_id("evidence", basis)
 
 

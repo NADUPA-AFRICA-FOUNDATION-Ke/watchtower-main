@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS scores(id INTEGER PRIMARY KEY AUTOINCREMENT, entity_i
 CREATE TABLE IF NOT EXISTS analyst_verdicts(id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id TEXT, campaign_id TEXT, verdict TEXT NOT NULL, analyst_comment TEXT, analyst_identifier TEXT, created_at TEXT, previous_verdict TEXT, evidence_snapshot TEXT);
 CREATE TABLE IF NOT EXISTS source_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, investigation_id TEXT, source TEXT, status TEXT, started_at TEXT, completed_at TEXT, results_returned INTEGER, error_code TEXT, error_message TEXT, rate_limit_metadata TEXT);
 CREATE TABLE IF NOT EXISTS observations(id INTEGER PRIMARY KEY AUTOINCREMENT, investigation_id TEXT, entity_id TEXT, provider TEXT, observation_type TEXT, raw_value TEXT, normalized_value TEXT, source_url TEXT, observed_at TEXT, metadata TEXT);
+CREATE TABLE IF NOT EXISTS evidence_integrity(evidence_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, retrieved_at TEXT NOT NULL, source_published_at TEXT);
+CREATE TABLE IF NOT EXISTS investigation_snapshots(investigation_id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_observation_entity ON observations(entity_id,observed_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_entity ON evidence(entity_id,observed_at);
 CREATE INDEX IF NOT EXISTS idx_rel_investigation ON relationships(investigation_id);
@@ -40,6 +42,8 @@ class InvestigationStore:
         self.path = str(path)
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA busy_timeout=5000")
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(MIGRATION)
         self.conn.commit()
 
@@ -100,6 +104,8 @@ class InvestigationStore:
                     ),
                 )
                 if inserted.rowcount:
+                    self.conn.execute("INSERT INTO evidence_integrity VALUES(?,?,?,?)",
+                                      (x.id, x.content_hash, x.retrieved_at, x.source_published_at))
                     self.conn.execute(
                         """INSERT INTO observations(
                            investigation_id,entity_id,provider,observation_type,
@@ -220,10 +226,15 @@ class InvestigationStore:
         }
 
     def get(self, table, key):
+        if table not in {"investigations", "entities", "campaigns", "evidence", "relationships"}:
+            raise ValueError("unsupported storage table")
         row = self.conn.execute(f"SELECT * FROM {table} WHERE id=?", (key,)).fetchone()
         return dict(row) if row else None
 
     def graph(self, iid):
+        snapshot = self.snapshot(iid)
+        if snapshot:
+            return snapshot["graph"]
         nodes = [
             dict(r)
             for r in self.conn.execute(
@@ -273,3 +284,21 @@ class InvestigationStore:
             "analyst_verdict": verdict,
             "system_classification_unchanged": True,
         }
+
+    def save_snapshot(self, iid, payload):
+        with self.conn:
+            self.conn.execute("INSERT INTO investigation_snapshots VALUES(?,?,?)",
+                              (iid, json.dumps(payload), now()))
+
+    def snapshot(self, iid):
+        row = self.conn.execute("SELECT payload FROM investigation_snapshots WHERE investigation_id=?", (iid,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def evidence_for(self, iid):
+        rows = self.conn.execute("""SELECT e.*,i.content_hash,i.retrieved_at,i.source_published_at
+            FROM evidence e LEFT JOIN evidence_integrity i ON i.evidence_id=e.id
+            WHERE e.investigation_id=? ORDER BY e.observed_at,e.id""", (iid,)).fetchall()
+        result = [dict(row) for row in rows]
+        for row in result:
+            row["raw_metadata"] = json.loads(row["raw_metadata"] or '{}')
+        return result

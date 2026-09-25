@@ -23,4 +23,4 @@ EXPOSE $PORT
 
 # Run the application
 # Using uvicorn with --host 0.0.0.0 to allow external access
-CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn web.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

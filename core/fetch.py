@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import httpx
+from .network_safety import PublicHTTPTransport
 
 
 # Minimum pause after a 429 that carries no Retry-After. Five seconds is the
@@ -61,7 +62,8 @@ class Fetcher:
             },
             timeout=timeout,
             follow_redirects=True,
-            transport=transport,          # tests inject a MockTransport here
+            transport=transport if transport is not None else PublicHTTPTransport(),
+            trust_env=False, max_redirects=4,
         )
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
 

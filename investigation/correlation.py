@@ -65,3 +65,64 @@ def clusters(entity_ids, relationships):
         if len(group) > 1:
             output.append(group)
     return output
+
+
+SHARED_RELATION = {
+    "phone_number": "shares_phone",
+    "email": "shares_email",
+    "social_account": "shares_social_account",
+    "certificate": "shares_certificate",
+    "nameserver": "shares_nameserver",
+    "payment_identifier": "shares_payment_identifier",
+    "analytics_id": "shares_analytics",
+    "html_fingerprint": "shares_html_fingerprint",
+    "favicon": "shares_favicon",
+}
+
+
+def correlate(iid, entities, evidence, relationships):
+    """Deterministic identifier joins and explicitly derived template similarity."""
+    from .models import Entity, Evidence, Relationship
+    # Exact high-value identifier reuse creates derived evidence and domain edges.
+    owners: defaultdict[str, set[str]] = defaultdict(set)
+    for relation in relationships.values():
+        source = entities.get(relation.source_entity_id)
+        related = entities.get(relation.target_entity_id)
+        if source and related and source.entity_type == "domain" and related.entity_type in SHARED_RELATION:
+            owners[related.id].add(source.id)
+    for shared_id, domain_ids in owners.items():
+        ordered = sorted(domain_ids)
+        for index, left in enumerate(ordered):
+            for right in ordered[index + 1:]:
+                shared = entities[shared_id]
+                ev = Evidence(iid, shared.id, "correlation", SHARED_RELATION[shared.entity_type],
+                              shared.canonical_value, None,
+                              {"source_entity": left, "related_entity": right,
+                 "derived": True, "supporting_evidence_ids": sorted({r.evidence_id for r in relationships.values()
+                     if r.target_entity_id == shared_id and r.source_entity_id in {left, right}})}, 1.0)
+                evidence[ev.id] = ev
+                rel = Relationship(iid, left, right, SHARED_RELATION[shared.entity_type], 1.0, ev.id)
+                relationships[rel.id] = rel
+
+    # Near-identical page templates become derived evidence. The threshold
+    # is intentionally strict; similarity alone never confirms a campaign.
+    page_domains: list[Entity] = [
+        e for e in entities.values() if e.entity_type == "domain"
+        and e.metadata.get("page", {}).get("simhash") is not None
+    ]
+    for index, left_domain in enumerate(page_domains):
+        for right_domain in page_domains[index + 1:]:
+            distance = bin(int(left_domain.metadata["page"]["simhash"]) ^
+                           int(right_domain.metadata["page"]["simhash"])).count("1")
+            if distance > 3:
+                continue
+            similarity = round(1 - distance / 64, 3)
+            ev = Evidence(iid, left_domain.id, "correlation", "html_similarity",
+                          str(similarity), None,
+                          {"related_entity": right_domain.id, "hamming_distance": distance, "derived": True,
+                           "supporting_evidence_ids": [e.id for e in evidence.values() if e.entity_id in {left_domain.id, right_domain.id} and e.evidence_type == "page_inspection"]},
+                          similarity)
+            evidence[ev.id] = ev
+            rel = Relationship(iid, left_domain.id, right_domain.id, "shares_html_template",
+                               similarity, ev.id)
+            relationships[rel.id] = rel

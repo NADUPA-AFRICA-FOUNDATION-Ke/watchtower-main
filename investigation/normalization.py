@@ -24,8 +24,12 @@ def normalize_url(value: str) -> str:
     host = (parsed.hostname or "").lower().encode("idna").decode("ascii")
     if not host:
         raise ValueError("URL has no hostname")
+    if parsed.username or parsed.password:
+        raise ValueError("credential-bearing URLs are unsupported")
     port = parsed.port
-    netloc = host if port in (None, 80, 443) else f"{host}:{port}"
+    authority = f"[{host}]" if ":" in host else host
+    default_port = 443 if parsed.scheme.lower() == "https" else 80
+    netloc = authority if port in (None, default_port) else f"{authority}:{port}"
     path = parsed.path or "/"
     return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
 

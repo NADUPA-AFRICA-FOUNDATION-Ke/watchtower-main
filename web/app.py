@@ -225,52 +225,28 @@ def list_sources():
     # same question as `default`. opensanctions is both a default and key-gated,
     # so keying the UI off `default` left it selected and silently returning
     # nothing — the worst possible failure for a sanctions check.
-    from watchtower.discovery.providers import default_providers
-    free_sources = [
+    from watchtower.registry import REGISTRY
+    catalog = [
         {
-            "name": provider.name,
-            "default": True,
-            "needs_key": False,
-            "available": True,
-            "key_name": "",
-            "capabilities": list(provider.capabilities()),
-            "status": "configured",
-            "detail": "No commercial API key required; verified when queried",
-            "surface": "investigation",
+            "name": definition.id,
+            "default": definition.default,
+            "needs_key": definition.access in {"free_key", "paid"},
+            "available": definition.is_enabled() and not definition.missing_credentials(),
+            "key_name": ", ".join(definition.env_vars),
+            "capabilities": list(definition.capabilities),
+            "status": definition.public()["status"],
+            "detail": definition.description,
+            "description": definition.description,
+            "surface": definition.surface,
+            "access": definition.access,
         }
-        for provider in default_providers()
-    ]
-    legacy = [
-        {
-            "name": n,
-            "default": n in DEFAULT_BACKENDS,
-            "needs_key": n in BACKEND_KEYS,
-            "available": has_credentials(n),
-            "key_name": ", ".join(BACKEND_REQUIREMENTS.get(n, (BACKEND_KEYS.get(n, ""),))),
-            "surface": "monitor",
-            "description": {
-                "gdelt": "Global news and broadcasts with a short delay",
-                "google_news": "Broad local and international news coverage",
-                "wikipedia": "Entity background and disambiguation context",
-                "hackernews": "Technology and fintech community discussions",
-                "social_web_index": "Free public social links found through web indexing",
-                "gleif": "Legal entity identifiers and ownership records",
-                "sec_edgar": "US company filings and regulatory disclosures",
-                "opensanctions": "Sanctions, PEP and watchlist records",
-                "opencorporates": "Global company registry records",
-                "reddit": "Subreddit search through the official Reddit API",
-                "x": "Posts through X's official API (paid access)",
-                "socialcrawl": "Cross-platform social discovery (paid credits)",
-            }.get(n, "Public source adapter"),
-        }
-        for n in BACKENDS if n not in RETIRED_BACKENDS
+        for definition in REGISTRY.all()
+        if definition.id not in RETIRED_BACKENDS
+        and (definition.default or definition.surface == "monitor")
+        and definition.phase != "inspection"
     ]
     return {
-        "sources": [
-            *free_sources,
-            *(item for item in legacy if item["name"] not in
-              {source["name"] for source in free_sources}),
-        ],
+        "sources": catalog,
         "ai_available": enricher.enabled,
         "ai_provider": available_provider() or "none",
         "ephemeral_storage": EPHEMERAL,
@@ -280,69 +256,15 @@ def list_sources():
 
 @app.get("/api/system/health")
 def system_health():
-    """Capability report: configuration is not misrepresented as live health."""
+    """Return observed registry health; configured sources remain unverified."""
     from core.enrich import available_provider
+    from watchtower.engine.health import SourceHealthService
 
-    def configured(key: str) -> bool:
-        return bool(os.environ.get(key))
-
-    sources = {
-        "reddit": {
-            "configured": configured("REDDIT_CLIENT_ID")
-            and configured("REDDIT_CLIENT_SECRET"),
-            "status": "degraded"
-            if configured("REDDIT_CLIENT_ID") and configured("REDDIT_CLIENT_SECRET")
-            else "missing_credentials",
-        },
-        "x": {
-            "configured": configured("X_BEARER_TOKEN"),
-            "status": "degraded"
-            if configured("X_BEARER_TOKEN")
-            else "subscription_limited",
-        },
-        "tiktok": {
-            "configured": configured("TIKTOK_ACCESS_TOKEN"),
-            "status": "direct_api"
-            if configured("TIKTOK_ACCESS_TOKEN")
-            else "web_index_only",
-            "detail": "Public index discovery only; direct crawling is not attempted",
-        },
-        "duckduckgo": {
-            "configured": True,
-            "status": "degraded",
-            "detail": "unauthenticated provider; verified per investigation",
-        },
-    }
     store = investigation_store()
     try:
-        latest = store.conn.execute(
-            """SELECT sr.*,
-               (SELECT MAX(ok.completed_at) FROM source_runs ok
-                WHERE ok.source=sr.source AND ok.status='operational') AS last_ok
-               FROM source_runs sr JOIN (
-               SELECT source,MAX(id) AS max_id FROM source_runs GROUP BY source
-               ) newest ON newest.max_id=sr.id"""
-        ).fetchall()
+        sources = SourceHealthService(store).sources()
     finally:
         store.conn.close()
-    from watchtower.discovery.providers import default_providers
-    for provider in default_providers():
-        sources[provider.name] = {
-            "configured": True,
-            "status": "configured",
-            "detail": "No key required; live availability not yet checked",
-            "capabilities": list(provider.capabilities()),
-        }
-    for row in latest:
-        sources[row["source"]] = {
-            **sources.get(row["source"], {}),
-            "configured": True,
-            "status": row["status"],
-            "last_attempt": row["started_at"],
-            "last_success": row["last_ok"],
-            "results": row["results_returned"],
-            "error": row["error_message"],
-        }
     return {
         "storage": {
             "persistent": not EPHEMERAL,
@@ -351,82 +273,40 @@ def system_health():
         },
         "model": {
             "provider": available_provider() or "none",
-            "status": "degraded" if available_provider() else "missing_credentials",
+            "status": "configured" if available_provider() else "missing_credentials",
             "detail": "verified when scoring runs",
         },
-        "sources": sources,
+        "sources": {row["id"]: row for row in sources},
         "analyst_verdicts": {"enabled": not EPHEMERAL},
     }
 
 
-@app.post("/api/investigations")
-async def create_investigation(payload: dict = Body(...)):
-    brand = str(payload.get("brand", "")).strip()
-    if not 2 <= len(brand) <= 100:
-        raise HTTPException(400, "brand must be between 2 and 100 characters")
-    try:
-        requested_limit = int(payload.get("limit", 20))
-    except (TypeError, ValueError):
-        raise HTTPException(400, "limit must be a number")
-    requested_limit = max(1, min(requested_limit, 75))
-    from watchtower.discovery.cache import ProviderCache
-    from watchtower.discovery.orchestrator import DiscoveryOrchestrator
-    from watchtower.discovery.providers import default_providers
-    from watchtower.discovery.safe_fetch import SafeFetcher
+def investigation_service():
+    from watchtower.engine.service import InvestigationService
+    from osint_discovery import lexicon_query_terms
+    scam = scamscan_config()
+    return InvestigationService(
+        data_path(config()["storage"].get("investigations_database", "investigations.db")),
+        data_path("provider-cache.db"), config().get("investigation", {}),
+        scam.get("brand", {}), tuple(lexicon_query_terms(scam, limit=16)),
+    )
 
-    store = investigation_store()
+
+from watchtower.engine.planner import InvestigationRequest
+from watchtower.engine.limits import BusyError
+
+
+@app.post("/api/investigations")
+async def create_investigation(payload: InvestigationRequest):
+    import asyncio
     try:
-        scam_cfg = scamscan_config()
-        configured_brand = scam_cfg.get("brand", {})
-        configured_terms = {
-            configured_brand.get("name", "").lower(),
-            *(str(x).lower() for x in configured_brand.get("aliases", [])),
-            *(str(x).lower() for x in configured_brand.get("products", [])),
-        }
-        # Product/campaign searches such as ``Fuliza Increase`` should inherit
-        # the configured M-PESA profile instead of becoming an isolated brand
-        # with no aliases. This preserves the parent brand context while
-        # keeping unrelated financial institutions out of the query.
-        brand_lower = brand.lower()
-        matched_terms = [term for term in configured_terms
-                         if term and (term in brand_lower or brand_lower in term)]
-        if not matched_terms:
-            configured_brand = {
-                "name": brand, "aliases": [brand], "official_domains": [],
-                "products": [], "related_organizations": [],
-            }
-        else:
-            configured_brand = dict(configured_brand)
-            configured_brand["aliases"] = list(dict.fromkeys([
-                *configured_brand.get("aliases", []),
-                *configured_brand.get("products", []),
-                *matched_terms,
-                brand,
-            ]))
-        inv_cfg = config().get("investigation", {})
-        cache = ProviderCache(data_path("provider-cache.db"))
-        engine = DiscoveryOrchestrator(
-            store,
-            default_providers(cache),
-            fetcher=SafeFetcher(cache=cache),
-            max_domains=min(requested_limit, int(inv_cfg.get("max_domains", 40))),
-            max_fetches=int(inv_cfg.get("max_page_fetches", 20)),
-            max_pivot_depth=int(inv_cfg.get("max_pivot_depth", 2)),
-            max_global_requests=int(inv_cfg.get("max_global_requests", 8)),
-            max_external_requests=int(inv_cfg.get("max_external_requests", 500)),
-        )
-        # Feed the investigation provider the same sourced language used by
-        # scam scoring. This keeps free social discovery aligned with the
-        # configured English/Kiswahili/Sheng lexicon without making providers
-        # read global configuration themselves.
-        from osint_discovery import lexicon_query_terms
-        lexicon_terms = tuple(lexicon_query_terms(scam_cfg, limit=16))
-        return await engine.investigate(
-            brand, str(payload.get("query") or brand), configured_brand,
-            lexicon_terms=lexicon_terms,
-        )
-    finally:
-        store.conn.close()
+        return await investigation_service().investigate(payload)
+    except BusyError as exc:
+        raise HTTPException(429, str(exc), headers={"Retry-After": "60"}) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(504, "Investigation deadline exceeded; coverage is incomplete") from exc
 
 
 @app.get("/api/investigations/{investigation_id}")
@@ -1276,5 +1156,10 @@ def get_report(name: str):
     media_type = "text/html" if path.suffix.lower() == ".html" else "text/markdown"
     return FileResponse(path, media_type=media_type, filename=name)
 
+
+from web.investigations import router_for
+app.include_router(router_for(investigation_service))
+from web.monitors import router_for as monitors_router
+app.include_router(monitors_router(investigation_service))
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

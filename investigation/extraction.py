@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import ipaddress
 from html import unescape
 from urllib.parse import urljoin, urlsplit
 
@@ -52,7 +53,13 @@ def extract_entities(
             url = normalize_url(urljoin(source_url, raw))
         except ValueError:
             continue
+        add(Entity("url", url, url))
         p, host = urlsplit(url), normalize_domain(url)
+        if host == "github.com":
+            parts = p.path.strip('/').split('/')
+            if len(parts) >= 2:
+                repo = '/'.join(parts[:2])
+                add(Entity("repository", "github:" + repo.lower(), repo, "github"))
         social = next(
             ((v, k) for k, v in SOCIAL.items() if host == k or host.endswith("." + k)),
             None,
@@ -97,4 +104,16 @@ def extract_entities(
             add(Entity("phone_number", phone, phone, "whatsapp"))
             add(Entity("social_account", normalize_social("whatsapp", phone), phone,
                        "whatsapp"))
+    for token in re.findall(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])|(?<![\w:])[a-fA-F0-9:]*:[a-fA-F0-9:]+(?![\w:])", text):
+        try:
+            address = ipaddress.ip_address(token)
+        except ValueError:
+            continue
+        add(Entity("ip_address", str(address), str(address)))
+    for username in re.findall(r"(?<![\w.])@([a-zA-Z0-9_]{2,32})\b", text):
+        add(Entity("username", username.lower(), '@' + username))
+    for domain in re.findall(r"(?<![\w@/.-])(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}(?![\w.-])", text):
+        host = normalize_domain(domain)
+        if host and host not in COMMON:
+            add(Entity("domain", host, host))
     return list(found.values())

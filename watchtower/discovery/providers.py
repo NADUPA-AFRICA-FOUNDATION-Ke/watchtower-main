@@ -20,6 +20,7 @@ from investigation.normalization import normalize_domain, normalize_url
 
 from .base import DiscoveryContext, DiscoveryProvider, ProviderRun, SourceHealth, utcnow
 from .cache import ProviderCache
+from .safe_fetch import PublicAPITransport, resolve_public
 
 
 def _brand_entity(context: DiscoveryContext) -> Entity:
@@ -71,7 +72,8 @@ class HttpProvider(DiscoveryProvider):
     def client(self):
         if self._client is None:
             self._client = httpx.AsyncClient(
-                timeout=15, follow_redirects=False,
+                timeout=15, follow_redirects=False, trust_env=False,
+                transport=PublicAPITransport(), max_redirects=4,
                 headers={"User-Agent": os.environ.get(
                     "WATCHTOWER_USER_AGENT", "Watchtower/1.0 OSINT (contact: "
                     + os.environ.get("WATCHTOWER_CONTACT", "unset") + ")"
@@ -822,8 +824,10 @@ class DNSProvider(DiscoveryProvider):
                 try:
                     records[kind] = sorted({str(r).rstrip(".") for r in
                                             dns.resolver.resolve(domain, kind, lifetime=5)})
-                except Exception:
+                except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                     continue
+                except Exception as exc:
+                    records.setdefault("_errors", []).append(f"{kind}:{type(exc).__name__}")
         except ImportError:
             for family, kind in ((socket.AF_INET, "A"), (socket.AF_INET6, "AAAA")):
                 try:
@@ -847,7 +851,12 @@ class DNSProvider(DiscoveryProvider):
                                        last_attempt=attempted,
                                        detail="No records returned" if not any(records.values()) else ""))
         entity.metadata["dns"] = records; run.entities.append(entity)
+        if records.get("_errors"):
+            run.health.status = "degraded" if any(v for k, v in records.items() if k != "_errors") else "provider_error"
+            run.health.error = "dns_lookup_incomplete"
         for kind, values in records.items():
+            if kind == "_errors":
+                continue
             for value in values:
                 typ: Any = "ip_address" if kind in {"A", "AAAA"} else "nameserver" if kind == "NS" else "dns_record"
                 target = Entity(typ, value.lower(), value, metadata={"record_type": kind})
@@ -866,9 +875,9 @@ class TLSProvider(DiscoveryProvider):
         return ("live_certificate", "certificate_san")
 
     @staticmethod
-    def _certificate(domain):
+    def _certificate(domain, address):
         context = ssl.create_default_context()
-        with socket.create_connection((domain, 443), timeout=7) as raw:
+        with socket.create_connection((address, 443), timeout=7) as raw:
             with context.wrap_socket(raw, server_hostname=domain) as wrapped:
                 return wrapped.getpeercert(binary_form=True), wrapped.getpeercert()
 
@@ -878,7 +887,8 @@ class TLSProvider(DiscoveryProvider):
         attempted = utcnow()
         run = ProviderRun(SourceHealth(self.name, "operational", tuple(self.capabilities()), last_attempt=attempted))
         try:
-            der, parsed = await asyncio.to_thread(self._certificate, entity.canonical_value)
+            addresses = await resolve_public(entity.canonical_value)
+            der, parsed = await asyncio.to_thread(self._certificate, entity.canonical_value, addresses[0])
             digest = hashlib.sha256(der).hexdigest()
             cert = Entity("certificate", "sha256:" + digest, digest,
                           metadata={"sans": [v for k, v in parsed.get("subjectAltName", []) if k == "DNS"],
@@ -910,7 +920,7 @@ class AbuseChProvider(HttpProvider):
         matches = []
         errors = {}
         try:
-            response = await self.client.post("https://urlhaus-api.abuse.ch/v1/url/", data={"url": url})
+            response = await self.client.post("https://urlhaus-api.abuse.ch/v1/url/", data={"url": url}, headers={"Auth-Key": os.environ.get("ABUSECH_AUTH_KEY", "")})
             response.raise_for_status(); data = response.json()
             if data.get("query_status") == "ok":
                 matches.append({"provider": "urlhaus", "data": data})
@@ -918,7 +928,7 @@ class AbuseChProvider(HttpProvider):
             errors["urlhaus"] = f"{type(exc).__name__}: {exc}"
         try:
             response = await self.client.post("https://threatfox-api.abuse.ch/api/v1/",
-                json={"query": "search_ioc", "search_term": normalize_domain(url)})
+                json={"query": "search_ioc", "search_term": normalize_domain(url)}, headers={"Auth-Key": os.environ.get("ABUSECH_AUTH_KEY", "")})
             response.raise_for_status(); data = response.json()
             if data.get("query_status") == "ok" and data.get("data"):
                 matches.append({"provider": "threatfox", "data": data["data"]})
@@ -952,7 +962,7 @@ class URLhausProvider(HttpProvider):
             if data is None:
                 await self._throttle()
                 response = await self.client.post("https://urlhaus-api.abuse.ch/v1/url/",
-                                                  data={"url": url})
+                                                  data={"url": url}, headers={"Auth-Key": os.environ.get("ABUSECH_AUTH_KEY", "")})
                 response.raise_for_status(); data = response.json()
                 self.cache.put(self.name, url, data, 21600)
             matches = ([{"provider": self.name, "data": data}]
@@ -986,7 +996,7 @@ class ThreatFoxProvider(HttpProvider):
             if data is None:
                 await self._throttle()
                 response = await self.client.post("https://threatfox-api.abuse.ch/api/v1/",
-                    json={"query": "search_ioc", "search_term": lookup})
+                    json={"query": "search_ioc", "search_term": lookup}, headers={"Auth-Key": os.environ.get("ABUSECH_AUTH_KEY", "")})
                 response.raise_for_status(); data = response.json()
                 self.cache.put(self.name, lookup, data, 21600)
             matches = ([{"provider": self.name, "data": data.get("data")}]
@@ -1044,21 +1054,10 @@ class IPASNProvider(DiscoveryProvider):
 
 
 def default_providers(cache: ProviderCache | None = None, client=None):
-    cache = cache or ProviderCache()
-    enabled = lambda key: os.environ.get(key, "true").lower() not in {"0", "false", "no", "off"}
-    providers: list[DiscoveryProvider] = []
-    web_search = DuckDuckGoProvider(cache)
-    if enabled("ENABLE_DUCKDUCKGO"): providers.append(web_search)
-    if enabled("ENABLE_SOCIAL_WEB_INDEX"): providers.append(SocialWebIndexProvider(web_search))
-    # Instance-dependent social APIs are intentionally not part of the default
-    # investigation surface. SocialWebIndexProvider remains the stable, free
-    # public fallback and can discover indexed social URLs.
-    if enabled("ENABLE_CT"): providers.append(CertificateTransparencyProvider(client, cache))
-    if enabled("ENABLE_COMMONCRAWL"): providers.append(CommonCrawlProvider(client, cache))
-    if enabled("ENABLE_RDAP"): providers.append(RDAPProvider(client, cache))
-    if enabled("ENABLE_DNS"): providers.append(DNSProvider(cache))
-    if enabled("ENABLE_IP_ASN"): providers.append(IPASNProvider())
-    if enabled("ENABLE_TLS"): providers.append(TLSProvider())
-    if enabled("ENABLE_URLHAUS"): providers.append(URLhausProvider(client, cache))
-    if enabled("ENABLE_THREATFOX"): providers.append(ThreatFoxProvider(client, cache))
-    return providers
+    """Compatibility factory driven by the authoritative capability catalogue."""
+    from watchtower.registry import REGISTRY
+    from .factory import build_providers
+    definitions = [s for s in REGISTRY.all()
+                   if s.surface == "investigation" and s.default
+                   and s.phase != "inspection" and s.is_enabled()]
+    return build_providers(definitions, cache, client)

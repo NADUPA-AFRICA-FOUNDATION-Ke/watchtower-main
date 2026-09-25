@@ -4,6 +4,8 @@ import asyncio
 import base64
 import ipaddress
 import socket
+import time
+import urllib.robotparser
 from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import urljoin, urlsplit
@@ -61,7 +63,7 @@ async def resolve_public(host: str) -> list[str]:
             answers = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
         except socket.gaierror as exc:
             raise UnsafeTarget(f"DNS resolution failed: {exc}") from exc
-        addresses = sorted({row[4][0] for row in answers})
+        addresses = sorted({str(row[4][0]) for row in answers})
     else:
         addresses = [str(literal)]
     if not addresses or not all(_public_ip(value) for value in addresses):
@@ -141,6 +143,8 @@ class SafeFetcher:
         user_agent: str = "Watchtower/1.0 evidence collector",
         cache=None,
         cache_ttl: int = 21600,
+        obey_robots: bool = True,
+        delay: float = 0.25,
     ):
         self._owns_client = client is None
         self._pinned_transport = _PinnedTransport() if client is None else None
@@ -154,12 +158,39 @@ class SafeFetcher:
         self.max_redirects = max_redirects
         self.cache = cache
         self.cache_ttl = cache_ttl
+        self.timeout = timeout
+        self.user_agent = user_agent
+        self.obey_robots = obey_robots
+        self.delay = delay
+        self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
+        self._last_hit: dict[str, float] = {}
 
     async def close(self):
         if self._owns_client:
             await self.client.aclose()
 
     async def fetch(self, url: str) -> SafeFetchResult:
+        try:
+            return await asyncio.wait_for(self._fetch(url), timeout=self.timeout * 2)
+        except asyncio.TimeoutError:
+            return SafeFetchResult(url, error="total fetch deadline exceeded")
+
+    async def _allowed(self, url: str) -> bool:
+        parsed = urlsplit(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin not in self._robots:
+            response = await self._fetch(origin + "/robots.txt", check_robots=False)
+            parser = urllib.robotparser.RobotFileParser()
+            if response.error or response.status >= 500 or response.status in {401, 403, 429}:
+                parser.parse(["User-agent: *", "Disallow: /"])
+            elif response.status == 200:
+                parser.parse(response.text.splitlines())
+            else:
+                parser.parse(["User-agent: *", "Allow: /"])
+            self._robots[origin] = parser
+        return self._robots[origin].can_fetch(self.user_agent, url)
+
+    async def _fetch(self, url: str, check_robots: bool = True) -> SafeFetchResult:
         requested = url
         cached = self.cache.get("safe_page", url) if self.cache else None
         if cached:
@@ -178,6 +209,12 @@ class SafeFetcher:
                 raise UnsafeTarget("target resolves to a non-public address")
             if self._pinned_transport:
                 self._pinned_transport.pin(host, addresses)
+            if check_robots and self.obey_robots and not await self._allowed(url):
+                return SafeFetchResult(requested, url, error="blocked by robots.txt or robots unavailable")
+            wait = self.delay - (time.monotonic() - self._last_hit.get(host, 0))
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_hit[host] = time.monotonic()
             chain.append(url)
             try:
                 async with self.client.stream("GET", url) as response:
@@ -211,10 +248,10 @@ class SafeFetcher:
                                                    redirect_chain=chain,
                                                    error="response exceeds size limit")
                     headers = {k.lower(): v for k, v in response.headers.items()
-                               if k.lower() in {"content-type", "server", "location", "via"}}
+                               if k.lower() in {"content-type", "server", "location", "via", "strict-transport-security", "content-security-policy", "x-content-type-options", "x-frame-options"}}
                     result = SafeFetchResult(requested, url, response.status_code, ctype,
                                              bytes(body), chain, headers)
-                    if self.cache:
+                    if self.cache and 200 <= response.status_code < 300:
                         payload = result.__dict__.copy()
                         payload["body"] = base64.b64encode(result.body).decode()
                         self.cache.put("safe_page", requested, payload, self.cache_ttl)
@@ -224,3 +261,32 @@ class SafeFetcher:
                                        error=f"{type(exc).__name__}: {exc}")
         return SafeFetchResult(requested, url, redirect_chain=chain,
                                error="redirect limit exceeded")
+
+
+class PublicAPITransport(_PinnedTransport):
+    """Validate and pin every public API destination, including redirected requests."""
+
+    async def handle_async_request(self, request):
+        if request.url.scheme not in {'http', 'https'} or request.url.userinfo:
+            raise UnsafeTarget('invalid public API URL')
+        addresses = await asyncio.wait_for(resolve_public(request.url.host), timeout=10)
+        self.pin(request.url.host, addresses)
+        response = await super().handle_async_request(request)
+        response.stream = BoundedStream(response.stream, 4_000_000)
+        return response
+
+
+class BoundedStream(httpx.AsyncByteStream):
+    def __init__(self, stream, limit):
+        self.stream, self.limit = stream, limit
+
+    async def __aiter__(self):
+        size = 0
+        async for chunk in self.stream:
+            size += len(chunk)
+            if size > self.limit:
+                raise httpx.ReadError('public API response exceeds size limit')
+            yield chunk
+
+    async def aclose(self):
+        await self.stream.aclose()

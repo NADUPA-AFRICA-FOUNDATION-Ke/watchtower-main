@@ -825,29 +825,21 @@ BACKENDS = {
 # chip gating, and diagnose.py — and when this lived in two of them the CLI
 # went on claiming opensanctions was the only key-gated source long after five
 # more had been added.
-BACKEND_KEYS = {
-    "opensanctions": "OPENSANCTIONS_API_KEY",
-    "opencorporates": "OPENCORPORATES_API_KEY",
-    "x": "X_BEARER_TOKEN",
-    "reddit": "REDDIT_CLIENT_ID",
-    "socialcrawl": "SOCIALCRAWL_API_KEY",
-}
+from watchtower.registry import REGISTRY
 
-# Some official APIs require a credential pair. Keep this separate from the
-# single display key above so the web UI and CLI cannot advertise a source as
-# ready when its second credential is missing.
+BACKEND_KEYS = {
+    name: REGISTRY.get(name).env_vars[0]
+    for name in BACKENDS if name != "social_web_index"
+    and REGISTRY.get(name).env_vars
+}
 BACKEND_REQUIREMENTS = {
-    "reddit": ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"),
+    name: REGISTRY.get(name).env_vars for name in BACKEND_KEYS
+    if len(REGISTRY.get(name).env_vars) > 1
 }
 
 
 def has_credentials(name: str) -> bool:
-    """True when this backend either needs no key or has the one it needs."""
-    requirements = BACKEND_REQUIREMENTS.get(name)
-    if requirements:
-        return all(bool(os.environ.get(var)) for var in requirements)
-    var = BACKEND_KEYS.get(name)
-    return not var or bool(os.environ.get(var))
+    return not REGISTRY.get(name).missing_credentials()
 
 
 # These legacy adapters remain importable for stored-job compatibility, but are

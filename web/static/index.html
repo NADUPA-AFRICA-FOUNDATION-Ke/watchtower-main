@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<noscript><p class="errs">Mnara requires JavaScript to search sources and review findings. Enable JavaScript and reload this page.</p></noscript>
 
 <a class="skip-link" href="#workspace-main">Skip to workspace</a>
 
@@ -35,6 +36,13 @@
     </div>
     <div class="side-group" data-side="scamscan">
       <span class="side-label">Investigation workspace</span>
+      <button class="tab" data-view="cases" data-side="scamscan"><span>Investigations</span></button>
+      <button class="tab" data-view="sources" data-side="scamscan"><span>Sources</span></button>
+      <button class="tab" data-view="campaigns" data-side="scamscan"><span>Campaigns</span></button>
+      <button class="tab" data-view="monitors" data-side="scamscan"><span>Monitors</span></button>
+      <button class="tab" data-view="reports" data-side="scamscan"><span>Reports</span></button>
+      <button class="tab" data-view="health" data-side="scamscan"><span>System health</span></button>
+      <button class="tab" data-view="settings" data-side="scamscan"><span>Settings</span></button>
       <button class="tab" data-view="discover" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/></svg><span>Find scam sites</span></button>
       <button class="tab" data-view="queue" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg><span>Review queue</span></button>
       <button class="tab" data-view="score" data-side="scamscan"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8"/></svg><span>Quick score</span></button>
@@ -211,22 +219,22 @@
       <code>prefix*</code>.
     </p>
   </form>
-  <div class="findings" id="archive-results"></div>
+  <div class="findings" id="archive-results" aria-live="polite"></div>
 </section>
 
 <!-- ========================== DISCOVER ========================== -->
 <section id="view-discover" hidden>
-  <header class="view-head">
+  <header class="view-head" tabindex="-1">
     <div>
       <span class="eyebrow">Mnara / Investigate</span>
-      <h1>Financial impersonation investigation</h1>
-      <p>Discover across free public sources, verify safely, extract entities, and reveal connected campaigns.</p>
+      <h1>Start an investigation</h1>
+      <p>Plan a public-source investigation, inspect evidence and record its limitations.</p>
     </div>
-    <span class="method-badge">zero-key evidence graph</span>
+    <span class="method-badge">Evidence-led investigation</span>
   </header>
 
   <form class="console" id="discover-form" autocomplete="off">
-    <label class="field-label" for="discover-brand">Brand or product to investigate</label>
+    <label class="field-label" for="discover-brand">Brand, domain, URL or identifier</label>
     <div class="field field-with-limit">
       <input id="discover-brand" type="text" spellcheck="false"
              minlength="2" maxlength="80" placeholder="Fuliza" required>
@@ -240,6 +248,13 @@
       Search discovers candidates. Page, infrastructure and threat observations
       establish risk. Exact identifier reuse reveals campaigns.
     </p>
+    <div class="investigation-controls">
+      <label for="investigation-market">Market<select id="investigation-market"><option value="GLOBAL">Global</option><option value="KE">Kenya</option><option value="TZ">Tanzania</option><option value="UG">Uganda</option></select></label>
+      <label for="investigation-lookback">Lookback days<input id="investigation-lookback" type="number" min="1" max="3650" value="90"></label>
+      <label class="toggle"><input id="investigation-enrich" type="checkbox" checked>Enrich discovered entities</label>
+      <button type="button" class="secondary-button" id="investigation-preflight">Check coverage</button>
+    </div>
+    <div id="investigation-preflight-result" aria-live="polite"></div>
     <details class="advanced-options">
       <summary>Target this investigation</summary>
       <label class="field-label" for="discover-query">Optional search focus</label>
@@ -249,6 +264,7 @@
     </details>
   </form>
 
+  <section id="investigation-record" aria-live="polite" hidden></section>
   <section class="trace compact-trace" id="discover-trace" hidden aria-live="polite">
     <div class="trace-head">
       <span class="trace-title">Discovery run</span>
@@ -325,7 +341,7 @@
     </p>
   </form>
 
-  <div class="findings" id="queue-results"></div>
+  <div class="findings" id="queue-results" aria-live="polite"></div>
 </section>
 
 <!-- ============================ SCORE ============================ -->
@@ -363,6 +379,13 @@
   <div class="tool-results" id="scan-out" aria-live="polite"></div>
 </section>
 
+<section id="view-cases" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>Investigations</h1><p>Reopen a saved investigation or start from a brand, domain or identifier.</p></div></header><div id="cases-content" class="investigation-content" aria-live="polite"></div></section>
+<section id="view-sources" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>Sources</h1><p>Declared capabilities and access requirements. Availability is verified when a source runs.</p></div></header><div id="sources-content" class="investigation-content" aria-live="polite"></div></section>
+<section id="view-campaigns" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>Campaigns</h1><p>Evidence-backed connections between investigated domains.</p></div></header><div id="campaigns-content" class="investigation-content" aria-live="polite"></div></section>
+<section id="view-monitors" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>Monitors</h1><p>Scheduled rechecks with bounded intervals and explicit changes.</p></div></header><div id="monitors-content" class="investigation-content" aria-live="polite"></div></section>
+<section id="view-reports" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>Reports</h1><p>Analyst reports retain scope, coverage, evidence IDs and source limitations.</p></div></header><div id="reports-content" class="investigation-content" aria-live="polite"></div></section>
+<section id="view-health" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>System health</h1><p>Last observed source state. A configured source is not proof of current availability.</p></div></header><div id="health-content" class="investigation-content" aria-live="polite"></div></section>
+<section id="view-settings" hidden><header class="view-head" tabindex="-1"><div><span class="eyebrow">Mnara / Investigation workspace</span><h1>Settings</h1><p>Investigation defaults and deployment constraints.</p></div></header><div id="settings-content" class="investigation-content" aria-live="polite"></div></section>
 </main>
 
 <dialog class="detail-dialog" id="detail-dialog" aria-labelledby="detail-title">
@@ -374,5 +397,6 @@
 </dialog>
 
 <script src="/app.js"></script>
+<script src="/investigations.js"></script>
 </body>
 </html>
