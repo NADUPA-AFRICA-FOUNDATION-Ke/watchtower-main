@@ -117,7 +117,7 @@ class ProviderAdapter:
             error = run.health.error
             if '429' in error:
                 status = 'rate_limited'
-            elif '401' in error or '403' in error or '404' in error:
+            elif '401' in error or '403' in error:
                 status = 'unavailable'
             run.health.error = 'rate_limited' if status == 'rate_limited' else 'source_error'
         if status == 'failed' and run.evidence:

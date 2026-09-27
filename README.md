@@ -10,14 +10,6 @@ This repository contains two complementary tools for threat intelligence:
 - **Watchtower**: Monitors news, regulatory sources, and sanctions lists for emerging threats
 - **ScamScan**: Actively hunts and analyzes phishing/scam websites targeting African financial services
 
-Mnara's investigation workspace builds on these existing workflows with a
-registry-driven, evidence-first investigation service. It supports capability
-planning, typed entity seeds, source coverage, provenance-preserving evidence,
-correlation, campaign review and bounded rechecks. See
-[`docs/INVESTIGATIONS.md`](docs/INVESTIGATIONS.md) for the API and source limits;
-remaining implementation boundaries are tracked in
-[`docs/ARCHITECTURE_AUDIT.md`](docs/ARCHITECTURE_AUDIT.md).
-
 ## Recent Improvements (Evidence-Based Detection)
 
 The platform has been upgraded from simple keyword detection to a comprehensive **evidence-based threat intelligence engine**:
@@ -77,9 +69,8 @@ no API key required to get results.
 ## The web UI
 
 A sweep takes a while, so nothing blocks: results stream over SSE and each
-source fills its lane as it reports in. The existing monitor, archive, queue and
-score workflows remain available alongside **Investigations**, **Sources**,
-**Campaigns**, **Monitors**, **Reports**, **System Health** and **Settings**.
+source fills its lane as it reports in. Four views — **Sweep** and **Archive**
+on the watchtower side, **Queue** and **Score** on the scamscan side.
 
 Budget 30-60s without model scoring. With it, expect longer: scoring is one
 call per candidate and a free-tier Gemini key is rate limited per minute, so a

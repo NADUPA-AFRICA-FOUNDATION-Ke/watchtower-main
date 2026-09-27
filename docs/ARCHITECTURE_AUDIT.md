@@ -74,34 +74,3 @@ REMOVE: no working path until a tested replacement exists.
 Dependency order: registry -> adapter contract/planner/preflight -> provider wrapping
 and accurate coverage -> evidence/enrichment/correlation -> shared service/API/MCP ->
 reports/rechecks/monitors -> investigation UI -> adversarial and end-to-end checks.
-
-## Re-audit after initial implementation
-
-The first implementation did not satisfy several stated interactions. A second
-pass found and corrected these concrete gaps: domain and URL seeds did not plan
-discovery providers; email, phone and username requests were labeled as brands
-and never created typed seed evidence; the campaign Evidence button referenced
-an undefined function; HTML reports omitted infrastructure/social/campaign
-context; wallet addresses were not extracted; campaign detail routing was
-shadowed by an older handler; and same-ASN relationships lost their underlying
-IP evidence. Those now have implementation and focused regression coverage.
-Campaign details preserve the legacy response fields while exposing supporting
-links; ASNs remain explicitly low-confidence infrastructure context. The
-connection panel now has an interactive, keyboard-operable SVG view alongside
-its evidence table. Phone, email, username, domain, URL and IP seeds are
-canonicalized and retained as typed evidence.
-
-The remaining target items are still partial and should not be represented as
-done:
-
-| Requirement | Current boundary |
-| --- | --- |
-| Live source health probes | Health combines declared config and last persisted run. No scheduled active health probes yet; untested sources correctly remain `unknown`. |
-| Source catalog completeness | Existing and implemented adapters are registered, but the long-tail capability names (screenshots, page technology detection, phone/email OSINT outside public indexing, credential-form reputation, etc.) do not all have adapters. |
-| Correlation and campaign analysis | Deterministic exact-identifier relations and conservative components exist. Several requested signals (analytics IDs, favicon/page-template similarity, wallet reuse) are not all wired into campaign scoring. |
-| Monitoring operations | SQLite records and a bounded due-work command exist, but this Render service has no separately provisioned scheduled worker. Rechecks therefore require an external scheduler. |
-| Storage and retention | Investigation evidence/snapshots are SQLite-backed. There is no retention policy, evidence blob store, or production Postgres migration. Render persistence depends on the service's configured disk/data directory. |
-| Graph interaction | The UI supports filtering, selecting, and expanding visible nodes in a bounded SVG/list view. It is a small-graph view, not a layout engine for large investigations. |
-| Report coverage | Structured evidence, coverage, source limitations, timeline, infrastructure, social links, and campaign context are included. Analyst verdict capture and report export formats beyond JSON/HTML remain in the legacy workflow. |
-| CI/type checks | Repository CI currently gates syntax, fatal flake8 rules, and pytest. A scoped mypy check passes for the new engine modules; the whole repository is not mypy-clean. |
-| Deployment | Source was pushed to `main`; the Render deployment status could not be read without Render credentials. |

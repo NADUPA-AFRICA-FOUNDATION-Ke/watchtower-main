@@ -6,7 +6,6 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Literal, Mapping, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from investigation.normalization import normalize_domain, normalize_phone, normalize_url
 from watchtower.registry import REGISTRY, SourceDefinition, SourceRegistry
 
 MARKETS = frozenset('GLOBAL KE TZ UG RW BI ET SO SS SD ZA NG GH GB US CA IN AU'.split())
@@ -47,8 +46,6 @@ class InvestigationRequest(BaseModel):
                 return 'url'
             if re.fullmatch(r'\+\d[\d ()-]{6,20}', value):
                 return 'phone_number'
-            if self.market == 'KE' and re.fullmatch(r'0[17]\d{8}', value):
-                return 'phone_number'
             if re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
                 return 'email'
             if value.startswith('@'):
@@ -79,8 +76,6 @@ class Plan:
 
 DISCOVERY_CAPABILITIES = {
     'brand': {'keyword_search', 'web_search', 'certificate_search', 'historical_web', 'social_mentions', 'repository_search'},
-    'domain': {'domain_search', 'web_search', 'certificate_search', 'subdomain_discovery', 'historical_web', 'url_discovery', 'threat_reputation'},
-    'url': {'web_search', 'certificate_search', 'historical_web', 'url_discovery', 'threat_reputation'},
     'phone_number': {'phone_search', 'web_search'},
     'email': {'email_search', 'web_search'},
     'username': {'username_lookup', 'web_search'},
@@ -93,7 +88,6 @@ class QueryPlanner:
 
     def plan(self, request: InvestigationRequest, env: Mapping[str, str] | None = None, cooldowns: tuple[str, ...] = ()) -> Plan:
         kind = request.entity_type
-        self.validate_subject(request)
         discovery = DISCOVERY_CAPABILITIES.get(kind, set())
         requested: list[SourceDefinition] = []
         if request.sources is not None:
@@ -138,37 +132,3 @@ class QueryPlanner:
         return Plan(tuple(s.id for s in requested), tuple(selected),
                     tuple(sorted({c for s in requested for c in s.capabilities})),
                     tuple(missing), tuple(unavailable), tuple(warnings), kind)
-
-    @staticmethod
-    def validate_subject(request: InvestigationRequest) -> str:
-        """Reject malformed identifiers during preflight and execution alike."""
-        value = request.brand.strip()
-        kind = request.entity_type
-        if kind == 'domain':
-            normalized = normalize_domain(value)
-            if not normalized or '.' not in normalized or any(c.isspace() for c in normalized):
-                raise ValueError('domain must be a valid hostname')
-            return normalized
-        if kind == 'url':
-            try:
-                return normalize_url(value)
-            except ValueError as exc:
-                raise ValueError('URL must be a valid HTTP(S) address') from exc
-        if kind == 'phone_number':
-            normalized = normalize_phone(value, 'KE' if request.market == 'KE' else None)
-            if not normalized:
-                raise ValueError('phone number must include a country code or a supported market format')
-            return normalized
-        if kind == 'email':
-            normalized = value.casefold()
-            if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', normalized):
-                raise ValueError('email address is invalid')
-            return normalized
-        if kind == 'username':
-            normalized = value.removeprefix('@').strip().casefold()
-            if not re.fullmatch(r'[\w.-]{2,64}', normalized):
-                raise ValueError('username must be 2–64 letters, digits, dots, underscores or hyphens')
-            return normalized
-        if kind == 'ip_address':
-            return str(ipaddress.ip_address(value))
-        return value

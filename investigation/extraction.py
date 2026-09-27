@@ -36,8 +36,6 @@ WHATSAPP_RE = re.compile(
     r"(?:https?://(?:wa\.me/|api\.whatsapp\.com/send\?[^\s<'\"]*?phone=)|"
     r"whatsapp://send\?[^\s<'\"]*?phone=)((?:\+|%2B)?\d{8,15})", re.I
 )
-BITCOIN_RE = re.compile(r"\b(?:bc1[a-z0-9]{25,59}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b", re.I)
-ETHEREUM_RE = re.compile(r"\b0x[a-fA-F0-9]{40}\b")
 
 
 def extract_entities(
@@ -112,12 +110,6 @@ def extract_entities(
         except ValueError:
             continue
         add(Entity("ip_address", str(address), str(address)))
-    for address in BITCOIN_RE.findall(text):
-        chain = "bitcoin"
-        canonical_address = address.lower() if address.lower().startswith("bc1") else address
-        add(Entity("wallet", f"{chain}:{canonical_address}", address, chain))
-    for address in ETHEREUM_RE.findall(text):
-        add(Entity("wallet", f"ethereum:{address.lower()}", address, "ethereum"))
     for username in re.findall(r"(?<![\w.])@([a-zA-Z0-9_]{2,32})\b", text):
         add(Entity("username", username.lower(), '@' + username))
     for domain in re.findall(r"(?<![\w@/.-])(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}(?![\w.-])", text):

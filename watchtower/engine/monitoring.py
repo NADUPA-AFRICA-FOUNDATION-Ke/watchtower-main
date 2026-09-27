@@ -100,25 +100,6 @@ def compare(previous: Optional[dict], current: dict) -> list[dict]:
                     changes.append({'event': field + '_changed', 'entity_id': row['id']})
             if metadata.get('page', {}).get('redirect_chain') != prior.get('page', {}).get('redirect_chain'):
                 changes.append({'event': 'redirect_chain_changed', 'entity_id': row['id']})
-    old_links = {
-        (edge['source_entity_id'], edge['target_entity_id'], edge['relationship_type'])
-        for edge in previous.get('relationships', [])
-    }
-    events = {
-        'redirects_to': 'new_redirect', 'uses_certificate': 'certificate_changed',
-        'resolves_to': 'infrastructure_changed', 'registered_with': 'infrastructure_changed',
-        'uses_nameserver': 'infrastructure_changed', 'shares_phone': 'new_campaign_link',
-        'shares_email': 'new_campaign_link', 'shares_username': 'new_campaign_link',
-        'shares_wallet': 'new_campaign_link', 'shares_social_account': 'new_campaign_link',
-        'shares_messaging_account': 'new_campaign_link', 'shares_favicon': 'new_campaign_link',
-        'shares_html_template': 'new_campaign_link', 'shares_html_fingerprint': 'new_campaign_link',
-    }
-    for edge in current.get('relationships', []):
-        identity = (edge['source_entity_id'], edge['target_entity_id'], edge['relationship_type'])
-        event = events.get(edge['relationship_type'])
-        if identity not in old_links and event:
-            changes.append({'event': event, 'source_entity_id': identity[0],
-                            'target_entity_id': identity[1], 'evidence_id': edge.get('evidence_id')})
     return changes
 
 

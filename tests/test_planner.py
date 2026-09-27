@@ -23,9 +23,7 @@ def test_domain_and_phone_plans_do_not_blast_every_source():
     planner = QueryPlanner()
     domain = planner.plan(InvestigationRequest(brand='acmepay.example'), {})
     assert domain.target_type == 'domain'
-    assert {'duckduckgo', 'certificate_transparency', 'common_crawl', 'rdap'} <= set(domain.selected)
-    url = planner.plan(InvestigationRequest(brand='https://acmepay.example/login'), {})
-    assert {'duckduckgo', 'certificate_transparency', 'common_crawl', 'rdap'} <= set(url.selected)
+    assert 'duckduckgo' not in domain.selected and 'rdap' in domain.selected
     phone = planner.plan(InvestigationRequest(brand='+254700000000', enrich=False), {})
     assert 'certificate_transparency' not in phone.selected
     assert 'social_web_index' in phone.selected

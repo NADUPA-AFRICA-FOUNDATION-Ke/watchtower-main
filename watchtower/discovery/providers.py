@@ -1046,7 +1046,7 @@ class IPASNProvider(DiscoveryProvider):
         if data.get("asn"):
             asn = Entity("asn", "asn:" + data["asn"], "AS" + data["asn"], metadata=data)
             ev = Evidence(context.investigation_id, asn.id, self.name, "asn_observation",
-                          data["asn"], None, {**data, "observed_for_ip": entity.canonical_value}, 0.9)
+                          data["asn"], None, data, 0.9)
             run.entities.append(asn); run.evidence.append(ev)
             run.relationships.append(Relationship(context.investigation_id,
                 entity.id, asn.id, "belongs_to", 0.9, ev.id))

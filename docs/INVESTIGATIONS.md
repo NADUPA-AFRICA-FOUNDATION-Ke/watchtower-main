@@ -32,8 +32,6 @@ without paid API keys.
   collection.
 - `GET /api/mnara/discover` — inspect source and capability metadata.
 - `GET /api/sources/health` — inspect source configuration and last health state.
-- `GET /api/campaigns/{id}` — inspect campaign members, linking relationships,
-  and their supporting evidence.
 - `/api/monitors` — create and manage scheduled investigation checks.
 
 These routes use the application's existing authentication middleware.

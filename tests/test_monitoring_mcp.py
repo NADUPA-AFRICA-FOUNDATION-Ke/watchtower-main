@@ -32,19 +32,6 @@ def test_enrichment_uses_same_service_without_discovery(tmp_path):
     assert hydrated['evidence'] and hydrated['candidates']
 
 
-def test_monitor_detects_new_campaign_and_certificate_relationships():
-    previous = {'id': 'old', 'entities': [], 'relationships': [
-        {'source_entity_id': 'd1', 'target_entity_id': 'c1', 'relationship_type': 'uses_certificate'},
-    ]}
-    current = {'id': 'new', 'entities': [], 'relationships': [
-        {'source_entity_id': 'd1', 'target_entity_id': 'c1', 'relationship_type': 'uses_certificate'},
-        {'source_entity_id': 'd1', 'target_entity_id': 'd2', 'relationship_type': 'shares_phone', 'evidence_id': 'ev2'},
-    ]}
-    changes = compare(previous, current)
-    assert changes == [{'event': 'new_campaign_link', 'source_entity_id': 'd1',
-                        'target_entity_id': 'd2', 'evidence_id': 'ev2'}]
-
-
 def test_mcp_schema_and_shared_service(tmp_path):
     pytest.importorskip('mcp')
     from watchtower.mcp_server import create_mcp
