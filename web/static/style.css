@@ -1658,19 +1658,6 @@ textarea#score-text { min-height: 148px; padding: 15px 16px; border-color: #d8db
 .record-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .record-actions a { padding: 10px 12px; }
 .source-status { font-family: var(--mono); font-size: 12px; }
-.coverage-note { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
-.coverage-note summary { min-height: 30px; display: flex; align-items: center; cursor: pointer; font-size: 14px; font-weight: 600; }
-.coverage-note p, .coverage-note ul { margin: 8px 0 0; }
-#investigation-preflight-result > p:first-child { margin: 12px 0; font-weight: 650; }
-.view-head[tabindex="-1"]:focus { outline: none; }
-.investigation-controls { padding-top: 12px; border-top: 1px solid var(--rule); }
-.investigation-controls .toggle { min-height: 44px; display: flex; align-items: center; gap: 8px; }
-.investigation-controls .toggle input { width: 18px; height: 18px; }
-.coverage-panel h3 { margin-top: 0; }
-.coverage-panel > p { margin: 8px 0; }
-#discover-summary:empty, #discover-coverage:empty, #discover-expansion:empty,
-#discover-campaigns:empty, #discover-social:empty, #discover-graph:empty,
-#discover-results:empty { display: none; }
 @media (max-width: 860px) { .side-group .tab span { display: inline; } .side-group .tab { flex-shrink: 0; } }
 @media (min-width: 861px) { .rail { overflow-y: auto; } }
 @media (max-width: 600px) { .investigation-controls > label { flex: 1 1 130px; } .record-section { padding: 12px; } }

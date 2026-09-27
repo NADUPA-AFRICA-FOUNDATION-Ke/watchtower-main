@@ -59,37 +59,11 @@
     const plan = await post('/api/investigations/preflight', payload);
     const out = $('#investigation-preflight-result');
     out.replaceChildren(el('p', null, `${plan.available_sources}/${plan.requested_sources} sources available for this plan.`));
-    const messages = plan.warnings || [];
-    const credentialWarnings = messages.filter(warning => warning.includes(': missing '));
-    const regularWarnings = messages.filter(warning => !warning.includes(': missing ') && !warning.startsWith('Lookback is a scope preference'));
-    if (credentialWarnings.length) {
-      const sources = credentialWarnings.map(warning => warning.slice(0, warning.indexOf(': missing ')));
-      const keys = [...new Set(credentialWarnings.map(warning => warning.slice(warning.indexOf(': missing ') + 10)))];
-      const details = section(`${sources.length} optional source${sources.length === 1 ? '' : 's'} need credentials`);
-      details.classList.add('coverage-note');
-      details.append(el('p', 'hint', `${sources.map(sourceLabel).join(' and ')} will be skipped; other available sources can still run.`));
-      details.append(el('p', 'hint', `Required environment variable: ${keys.join(', ')}`));
-      out.append(details);
-    }
-    if (regularWarnings.length || messages.some(warning => warning.startsWith('Lookback is a scope preference'))) {
-      const notes = section('Scope and availability notes');
-      notes.classList.add('coverage-note');
-      if (regularWarnings.length) {
-        const list = el('ul', 'hint');
-        regularWarnings.forEach(warning => list.append(el('li', null, warning)));
-        notes.append(list);
-      }
-      if (messages.some(warning => warning.startsWith('Lookback is a scope preference'))) {
-        notes.append(el('p', 'hint', 'Lookback is a scope preference. Sources without date filtering may return older observations.'));
-      }
-      out.append(notes);
-    }
+    const warnings = el('ul', 'hint');
+    (plan.warnings || []).forEach(warning => warnings.append(el('li', null, warning)));
+    out.append(warnings);
     return plan.can_proceed ? payload : null;
   };
-
-  function sourceLabel(id) {
-    return ({ urlhaus: 'URLhaus', threatfox: 'ThreatFox' })[id] || id.replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
-  }
   $('#investigation-preflight').onclick = async () => {
     const control = $('#investigation-preflight');
     control.disabled = true;
