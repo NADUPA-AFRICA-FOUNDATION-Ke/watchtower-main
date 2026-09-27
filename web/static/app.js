@@ -1126,14 +1126,23 @@ function renderInvestigationSocial(findings, pagination = {}) {
 
 function renderInvestigationCoverage(coverage) {
   const box = $("#discover-coverage");
-  const failed = [...(coverage.failed || []), ...(coverage.unavailable || []), ...(coverage.limited || []), ...(coverage.missing_credentials || []), ...(coverage.not_searched || [])];
+  const incomplete = [...(coverage.failed || []), ...(coverage.unavailable || []), ...(coverage.limited || []), ...(coverage.missing_credentials || []), ...(coverage.not_searched || [])];
   box.replaceChildren(el("h3", null, "Source coverage"),
     el("p", null, `${coverage.successful?.length || 0} successful of ${coverage.configured || 0} configured`),
     el("p", "hint", coverage.statement || "Coverage is limited to accessible sources."));
-  const tags = el("div", "tags");
-  (coverage.successful || []).forEach(name => tags.append(el("span", "tag", `Searched: ${name}`)));
-  failed.forEach(item => tags.append(el("span", "tag warn", `${item.provider || item.source}: ${item.status}`)));
-  box.append(tags);
+  if (coverage.successful?.length) {
+    const searched = el('details', 'coverage-note');
+    searched.append(el('summary', null, `Sources searched (${coverage.successful.length})`), el('p', 'hint', coverage.successful.join(', ')));
+    box.append(searched);
+  }
+  if (incomplete.length) {
+    const notes = el('details', 'coverage-note');
+    notes.append(el('summary', null, `Sources with limitations (${incomplete.length})`));
+    const list = el('ul', 'hint');
+    incomplete.forEach(item => list.append(el('li', null, `${item.provider || item.source}: ${item.status}${item.detail ? ` — ${item.detail}` : ''}`)));
+    notes.append(list);
+    box.append(notes);
+  }
 }
 
 function renderInvestigationExpansion(expansion) {
