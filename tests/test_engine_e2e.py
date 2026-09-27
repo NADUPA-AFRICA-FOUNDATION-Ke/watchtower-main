@@ -79,7 +79,12 @@ def test_acmepay_pipeline_and_immutable_snapshot(tmp_path, monkeypatch):
         if ev['raw_metadata'].get('derived'):
             assert set(ev['raw_metadata']['supporting_evidence_ids']) <= evidence_ids
     assert result['timeline'] and result['report']['limitations']
+    assert result['report']['source_limitations']
+    assert result['report']['social_relationships']
+    assert result['report']['campaign_relationships']
+    assert all(campaign['entity_ids'] for campaign in result['campaigns'])
     assert 'Evidence' in report_html(result)
+    assert 'Social relationships' in report_html(result)
     stored = service.get(result['id'])
     assert stored['graph'] == result['graph']
     store = InvestigationStore(service.database)
@@ -107,3 +112,40 @@ def test_api_preflight_self_discovery_and_validation(tmp_path, monkeypatch):
         assert client.get(f'/api/investigations/{iid}/evidence').json()['evidence']
         assert client.get(f'/api/investigations/{iid}/report?format=html').status_code == 200
         assert client.get('/api/investigations/missing/evidence').status_code == 404
+        campaigns = client.get('/api/campaigns').json()['campaigns']
+        if campaigns:
+            detail = client.get(f"/api/campaigns/{campaigns[0]['id']}")
+            assert detail.status_code == 200
+            assert detail.json()['entities']
+            assert 'relationships' in detail.json()
+
+
+def test_phone_email_and_username_are_canonical_seed_entities(tmp_path):
+    service = make_service(tmp_path)
+    subjects = [
+        ('+254 712 345 678', 'KE', 'phone_number', '+254712345678'),
+        ('0712345678', 'KE', 'phone_number', '+254712345678'),
+        ('Analyst@Example.org', 'GLOBAL', 'email', 'analyst@example.org'),
+        ('@Analyst_One', 'GLOBAL', 'username', 'analyst_one'),
+    ]
+    for raw, market, kind, canonical in subjects:
+        result = asyncio.run(service.investigate(InvestigationRequest(
+            brand=raw, market=market, sources=['social_web_index'], enrich=False,
+        )))
+        seed = next(entity for entity in result['entities'] if entity['entity_type'] == kind)
+        assert seed['canonical_value'] == canonical
+        observation = next(evidence for evidence in result['evidence']
+                           if evidence['entity_id'] == seed['id'])
+        assert observation['source'] == 'user_input'
+        assert observation['evidence_type'] == 'investigation_seed'
+
+
+def test_invalid_typed_target_fails_preflight(tmp_path):
+    service = make_service(tmp_path)
+    request = InvestigationRequest(brand='not-an-email', target_type='email')
+    try:
+        service.preflight(request)
+    except ValueError as exc:
+        assert 'email address is invalid' in str(exc)
+    else:
+        raise AssertionError('malformed email passed preflight')

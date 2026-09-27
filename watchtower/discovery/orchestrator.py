@@ -32,12 +32,21 @@ EDGE_BY_TYPE = {
     "registrar": "registered_with",
     "phone_number": "contains_phone",
     "email": "contains_email",
+    "username": "contains_username",
+    "wallet": "contains_payment_identifier",
+    "messaging_account": "links_to_messaging_account",
     "social_account": "links_to_social",
     "payment_identifier": "contains_payment_identifier",
     "analytics_id": "uses_analytics",
     "html_fingerprint": "uses_html_fingerprint",
     "favicon": "uses_favicon",
     "url": "links_to",
+}
+CAMPAIGN_LINK_TYPES = {
+    "shares_phone", "shares_email", "shares_username", "shares_wallet",
+    "shares_social_account", "shares_messaging_account", "shares_payment_identifier",
+    "shares_repository", "shares_favicon", "shares_analytics",
+    "shares_html_fingerprint", "shares_html_template", "shares_certificate",
 }
 
 
@@ -161,9 +170,21 @@ class DiscoveryOrchestrator:
             tuple(brand_config.get("aliases", [])), self.max_domains,
             lexicon_terms=tuple(lexicon_terms),
         )
-        brand_entity = Entity("brand", brand.strip().lower(), brand,
-                              metadata={"official_domains": list(context.official_domains)})
-        entities = {brand_entity.id: brand_entity}
+        subject_type = self.request.entity_type if self.request else "brand"
+        subject_value = brand.strip().lower()
+        if self.request:
+            from watchtower.engine.planner import QueryPlanner
+            subject_value = QueryPlanner.validate_subject(self.request)
+        if subject_type == "url":
+            subject_entity = Entity("url", subject_value, subject_value)
+        elif subject_type == "ip_address":
+            subject_entity = Entity("ip_address", subject_value, subject_value)
+        elif subject_type in {"phone_number", "email", "username", "domain"}:
+            subject_entity = Entity(cast(EntityType, subject_type), subject_value, subject_value)
+        else:
+            subject_entity = Entity("brand", subject_value, brand,
+                                    metadata={"official_domains": list(context.official_domains)})
+        entities = {subject_entity.id: subject_entity}
         evidence: dict[str, Evidence] = {}
         relationships: dict[str, Relationship] = {}
         health = []
@@ -211,20 +232,25 @@ class DiscoveryOrchestrator:
                     if "ip_address" in definition_for(provider).input_types:
                         absorb(await self._call(provider.enrich, seed, context))
 
-        if self.request and self.request.entity_type in {"domain", "url", "ip_address"}:
-            from investigation.normalization import normalize_url
-            kind = self.request.entity_type
-            value = self.request.brand
-            if kind in {"domain", "url"}:
-                value = normalize_domain(value)
-                kind = "domain"
-            seed = Entity(cast(EntityType, kind), value, value)
-            entities[seed.id] = seed
-            ev = Evidence(iid, seed.id, "user_input", "investigation_seed", value,
-                          normalize_url(self.request.brand) if self.request.entity_type == "url" else None,
-                          {"unverified_user_input": True}, 0.0)
-            evidence[ev.id] = ev
-            if kind == "ip_address":
+        if self.request and self.request.entity_type != "brand":
+            seed = subject_entity
+            evidence[seed.id] = Evidence(
+                iid, seed.id, "user_input", "investigation_seed", seed.canonical_value,
+                seed.canonical_value if seed.entity_type == "url" else None,
+                {"unverified_user_input": True, "input_type": seed.entity_type}, 0.0,
+            )
+            if seed.entity_type == "url":
+                host = normalize_domain(seed.canonical_value)
+                if host:
+                    domain = Entity("domain", host, host, metadata={"seed_url_id": seed.id})
+                    entities[domain.id] = domain
+                    ev = Evidence(iid, domain.id, "user_input", "investigation_seed", host,
+                                  seed.canonical_value,
+                                  {"unverified_user_input": True, "derived_from_url": seed.id}, 0.0)
+                    evidence[ev.id] = ev
+                    rel = Relationship(iid, seed.id, domain.id, "links_to", 1.0, ev.id)
+                    relationships[rel.id] = rel
+            if seed.entity_type == "ip_address":
                 for provider in self.providers:
                     if "ip_address" in definition_for(provider).input_types:
                         absorb(await self._call(provider.enrich, seed, context))
@@ -435,10 +461,11 @@ class DiscoveryOrchestrator:
                                   entities, brand_config)
             scored[domain.id] = result.dict(); self.store.save_score(domain.id, result)
 
-        # Campaigns require exact shared identifiers; a shared cloud IP alone is excluded.
+        # Campaign membership needs a meaningful shared identifier/artifact;
+        # broad hosting, ASN, registrar and nameserver matches stay as graph edges.
         adjacency = defaultdict(set)
         for relation in relationships.values():
-            if relation.relationship_type in set(SHARED_RELATION.values()) - {"shares_ip", "shares_nameserver"}:
+            if relation.relationship_type in CAMPAIGN_LINK_TYPES:
                 adjacency[relation.source_entity_id].add(relation.target_entity_id)
                 adjacency[relation.target_entity_id].add(relation.source_entity_id)
         campaigns = []
@@ -453,10 +480,12 @@ class DiscoveryOrchestrator:
                 component.add(current); seen.add(current); stack.extend(adjacency[current] - component)
             if len(component) >= 2:
                 risk = max((scored.get(x, {}).get("risk_score", 0) for x in component), default=0)
-                campaigns.append(self.store.create_campaign(
+                campaign = self.store.create_campaign(
                     brand, sorted(component), min(100, 40 + 15 * len(component)),
                     "High" if len(component) >= 3 else "Moderate", risk,
-                ))
+                )
+                campaign['entity_ids'] = sorted(component)
+                campaigns.append(campaign)
 
         collection = coverage(requested, health)
         successful = collection["successful"]

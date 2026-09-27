@@ -58,6 +58,16 @@ def test_modular_extraction_and_deduplication():
     assert any(t == "app" for t, _ in values)
 
 
+def test_crypto_wallets_are_typed_and_canonicalized():
+    entities = extract_entities(
+        "BTC 1BoatSLRHtKNngkdXEeobR76b53LETtpyT and ETH "
+        "0x52908400098527886E0F7030069857D2E4169EE7"
+    )
+    values = {(entity.entity_type, entity.canonical_value) for entity in entities}
+    assert ("wallet", "bitcoin:1BoatSLRHtKNngkdXEeobR76b53LETtpyT") in values
+    assert ("wallet", "ethereum:0x52908400098527886e0f7030069857d2e4169ee7") in values
+
+
 def test_relationship_requires_evidence_and_scoring_is_separate():
     with pytest.raises(ValueError):
         Relationship("i", "a", "b", "shares_phone", 0.9, "")
@@ -67,6 +77,53 @@ def test_relationship_requires_evidence_and_scoring_is_separate():
     assert clusters(["a", "b"], [rel]) == [{"a", "b"}]
     ip = Relationship("i", "a", "b", "shares_ip", 1, ev.id)
     assert clusters(["a", "b"], [ip]) == []
+
+
+def test_wallet_and_username_reuse_create_evidence_backed_edges():
+    from investigation.correlation import correlate
+    from investigation.models import Entity
+    iid = 'investigation'
+    domains = [Entity('domain', f'brand-{idx}.example', f'brand-{idx}.example') for idx in (1, 2)]
+    wallet = Entity('wallet', 'ethereum:0xabc', '0xabc', 'ethereum')
+    evidence = {}
+    relationships = {}
+    entities = {entity.id: entity for entity in [*domains, wallet]}
+    for domain in domains:
+        observation = Evidence(iid, wallet.id, 'safe_page', 'page_observation', wallet.display_value)
+        evidence[observation.id] = observation
+        edge = Relationship(iid, domain.id, wallet.id, 'contains_payment_identifier', .9, observation.id)
+        relationships[edge.id] = edge
+    correlate(iid, entities, evidence, relationships)
+    derived = [edge for edge in relationships.values() if edge.relationship_type == 'shares_wallet']
+    assert len(derived) == 1
+    assert derived[0].evidence_id in evidence
+
+
+def test_shared_asn_is_explained_but_stays_a_low_confidence_infrastructure_link():
+    from investigation.correlation import correlate
+    from investigation.models import Entity
+    iid = 'investigation'
+    left = Entity('domain', 'left.example', 'left.example')
+    right = Entity('domain', 'right.example', 'right.example')
+    ips = [Entity('ip_address', f'203.0.113.{n}', f'203.0.113.{n}') for n in (10, 11)]
+    asn = Entity('asn', 'asn:64500', 'AS64500')
+    entities = {row.id: row for row in (left, right, *ips, asn)}
+    evidence, relationships = {}, {}
+    for domain, ip in zip((left, right), ips):
+        for source, target, relation_type, value in (
+            (domain, ip, 'resolves_to', ip.canonical_value),
+            (ip, asn, 'belongs_to', asn.canonical_value),
+        ):
+            observation = Evidence(iid, target.id, 'fixture', relation_type, value,
+                                   raw_metadata={'observed_for': source.canonical_value})
+            evidence[observation.id] = observation
+            relation = Relationship(iid, source.id, target.id, relation_type, .9, observation.id)
+            relationships[relation.id] = relation
+    correlate(iid, entities, evidence, relationships)
+    edge = next(row for row in relationships.values() if row.relationship_type == 'shares_asn')
+    derived = evidence[edge.evidence_id]
+    assert edge.confidence == .4
+    assert len(derived.raw_metadata['supporting_evidence_ids']) == 4
 
 
 def test_queue_dedupe_and_recursion_limits():

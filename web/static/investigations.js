@@ -93,9 +93,14 @@
       const all = el('option', null, label); all.value = ''; control.append(all);
       options.sort().forEach(value => { const option = el('option', null, value); option.value = value; control.append(option); });
     });
+    const visual = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    visual.setAttribute('viewBox', '0 0 860 500');
+    visual.setAttribute('role', 'group');
+    visual.setAttribute('aria-label', 'Interactive evidence graph. Select a node to inspect its evidence and connections.');
+    visual.classList.add('evidence-graph-svg');
     const nodes = el('div', 'graph-node-list'), edges = el('div'), detail = el('div', 'record-detail'), status = el('p', 'hint');
-    let limit = 40;
-    const more = button('Show more nodes', () => { limit += 40; draw(); });
+    let limit = 20;
+    const more = button('Show more nodes', () => { limit += 20; draw(); });
     function inspect(node) {
       detail.replaceChildren(el('h3', null, node.display_value), el('p', 'hint', `${node.entity_type} · ${node.id}`));
       const nearby = graph.edges.filter(edge => edge.source_entity_id === node.id || edge.target_entity_id === node.id);
@@ -111,16 +116,55 @@
       const filteredEdges = graph.edges.filter(edge => (!relations.value || edge.relationship_type === relations.value) && edge.confidence >= Number(confidence.value));
       const ids = new Set(filteredEdges.flatMap(edge => [edge.source_entity_id, edge.target_entity_id]));
       const filteredNodes = graph.nodes.filter(node => (!types.value || node.entity_type === types.value) && (!relations.value || ids.has(node.id)) && node.confidence >= Number(confidence.value));
-      nodes.replaceChildren(...filteredNodes.slice(0, limit).map(node => button(`${node.entity_type}: ${node.display_value}`, () => inspect(node))));
+      const visibleNodes = filteredNodes.slice(0, limit);
+      const visible = new Set(visibleNodes.map(node => node.id));
+      const pointById = new Map();
+      const centerX = 430, centerY = 245, radius = Math.min(188, 42 + visibleNodes.length * 5.2);
+      visibleNodes.forEach((node, index) => {
+        const angle = (2 * Math.PI * index / Math.max(visibleNodes.length, 1)) - Math.PI / 2;
+        pointById.set(node.id, { x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) });
+      });
+      visual.replaceChildren();
+      filteredEdges.filter(edge => visible.has(edge.source_entity_id) && visible.has(edge.target_entity_id)).forEach(edge => {
+        const from = pointById.get(edge.source_entity_id), to = pointById.get(edge.target_entity_id);
+        const line = document.createElementNS(visual.namespaceURI, 'line');
+        line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
+        line.setAttribute('x2', to.x); line.setAttribute('y2', to.y);
+        line.setAttribute('stroke-opacity', String(Math.max(.2, Math.min(1, edge.confidence))));
+        line.classList.add('evidence-graph-edge');
+        const title = document.createElementNS(visual.namespaceURI, 'title');
+        title.textContent = `${edge.relationship_type} · evidence ${edge.evidence_id}`;
+        line.append(title); visual.append(line);
+      });
+      visibleNodes.forEach(node => {
+        const point = pointById.get(node.id);
+        const group = document.createElementNS(visual.namespaceURI, 'g');
+        group.classList.add('graph-svg-node');
+        group.dataset.type = node.entity_type;
+        group.setAttribute('role', 'button');
+        group.setAttribute('tabindex', '0');
+        group.setAttribute('aria-label', `${node.entity_type}: ${node.display_value}`);
+        const circle = document.createElementNS(visual.namespaceURI, 'circle');
+        circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); circle.setAttribute('r', '12');
+        const label = document.createElementNS(visual.namespaceURI, 'text');
+        label.setAttribute('x', point.x); label.setAttribute('y', point.y + 29);
+        label.textContent = node.display_value.length > 20 ? `${node.display_value.slice(0, 19)}…` : node.display_value;
+        const title = document.createElementNS(visual.namespaceURI, 'title');
+        title.textContent = `${node.entity_type}: ${node.display_value}`;
+        group.append(circle, label, title);
+        group.onclick = () => inspect(node);
+        group.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); inspect(node); } };
+        visual.append(group);
+      });
+      nodes.replaceChildren(...visibleNodes.map(node => button(`${node.entity_type}: ${node.display_value}`, () => inspect(node))));
       const names = new Map(graph.nodes.map(node => [node.id, node.display_value]));
-      const visible = new Set(filteredNodes.slice(0, limit).map(node => node.id));
       const rows = filteredEdges.filter(edge => visible.has(edge.source_entity_id) || visible.has(edge.target_entity_id)).slice(0, 50);
       edges.replaceChildren(table(['From', 'Relationship', 'To', 'Evidence'], rows.map(edge => [names.get(edge.source_entity_id), edge.relationship_type, names.get(edge.target_entity_id), button(edge.evidence_id, () => { const ev = evidence.find(ev => ev.id === edge.evidence_id); if (ev) evidenceDetail(ev, detail); })])));
       status.textContent = `${Math.min(limit, filteredNodes.length)} of ${filteredNodes.length} matching nodes · minimum confidence ${confidence.value}. Select a node to expand its connections.`;
       more.hidden = limit >= filteredNodes.length;
     }
     [types, relations, confidence].forEach(control => control.onchange = () => { limit = 40; draw(); });
-    box.append(filters, status, nodes, more, edges, detail); draw(); return box;
+      box.append(filters, status, visual, nodes, more, edges, detail); draw(); return box;
   }
 
   window.mnaraShowInvestigation = data => {
@@ -164,6 +208,22 @@
     window.mnaraShowInvestigation(data);
     $('#discover-brand').value = data.brand || data.investigation.brand;
     record.scrollIntoView({ block: 'start' });
+  }
+  async function openCampaignDetail(id) {
+    const data = await request(`/api/campaigns/${encodeURIComponent(id)}`);
+    const out = $('#campaigns-content');
+    const campaign = data.campaign;
+    const detail = section(`${campaign.public_id} · Campaign evidence`, true);
+    detail.append(el('p', null, `${campaign.brand} · Correlation ${campaign.correlation_label} (${campaign.correlation_score}) · Risk ${campaign.threat_score ?? 'not scored'}`));
+    detail.append(table(['Entity', 'Type', 'Confidence', 'First seen', 'Last seen'], data.entities.map(item => [item.display_value, item.entity_type, item.confidence, item.first_seen, item.last_seen])));
+    detail.append(table(['Why connected', 'From', 'To', 'Confidence', 'Supporting evidence'], data.relationships.map(item => [item.relationship_type, item.source_entity_id, item.target_entity_id, item.confidence, item.evidence_id])));
+    const evidencePanel = section(`Supporting observations · ${data.evidence.length}`, true);
+    const selected = el('div', 'record-detail');
+    evidencePanel.append(table(['Entity', 'Source', 'Observation', 'Retrieved', 'Inspect'], data.evidence.slice(0, 100).map(item => [item.entity_id, item.source, item.observed_value, item.retrieved_at || 'Not recorded', button('Evidence', () => evidenceDetail(item, selected))])), selected);
+    if (data.evidence.length > 100) evidencePanel.append(el('p', 'hint', 'Showing the 100 most recent observations.'));
+    detail.append(evidencePanel);
+    out.append(detail);
+    detail.scrollIntoView({ block: 'nearest' });
   }
   async function loadView(view) {
     const out = $(`#${view}-content`);

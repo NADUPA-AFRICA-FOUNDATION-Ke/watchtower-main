@@ -110,7 +110,7 @@ class Fetcher:
                     rp.parse(r.text.splitlines())
                 elif 500 <= r.status_code < 600:
                     rp = urllib.robotparser.RobotFileParser()
-                    rp.disallow_all = True
+                    rp.parse(["User-agent: *", "Disallow: /"])
                 # 4xx and anything else: no usable rules, so allowed.
             except Exception:
                 pass
@@ -155,10 +155,10 @@ class Fetcher:
         for attempt in range(retries + 1):
             self._throttle(domain)
             try:
-                request_options = {"headers": headers or None}
                 if timeout is not None:
-                    request_options["timeout"] = timeout
-                r = self.client.get(url, **request_options)
+                    r = self.client.get(url, headers=headers or None, timeout=timeout)
+                else:
+                    r = self.client.get(url, headers=headers or None)
             except httpx.HTTPError as e:
                 if attempt == retries:
                     return FetchResult(url, 0, error=f"{type(e).__name__}: {e}")

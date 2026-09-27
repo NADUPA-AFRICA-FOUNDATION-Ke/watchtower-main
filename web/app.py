@@ -389,14 +389,38 @@ def get_campaign(campaign_id: str):
         row = store.get("campaigns", campaign_id)
         if not row:
             raise HTTPException(404, "campaign not found")
-        row["entities"] = [
+        members = [
             dict(r)
             for r in store.conn.execute(
                 "SELECT e.*,ce.relationship_strength FROM campaign_entities ce JOIN entities e ON e.id=ce.entity_id WHERE ce.campaign_id=?",
                 (campaign_id,),
             )
         ]
-        return row
+        entity_ids = [entity["id"] for entity in members]
+        relationships = []
+        evidence = []
+        if entity_ids:
+            placeholders = ",".join("?" for _ in entity_ids)
+            relationships = [dict(r) for r in store.conn.execute(
+                f"""SELECT r.*,ev.source,ev.source_url,ev.observed_value
+                    FROM relationships r JOIN evidence ev ON ev.id=r.evidence_id
+                    WHERE r.source_entity_id IN ({placeholders})
+                      AND r.target_entity_id IN ({placeholders})
+                    ORDER BY r.confidence DESC LIMIT 500""",
+                (*entity_ids, *entity_ids),
+            )]
+            evidence = [dict(r) for r in store.conn.execute(
+                f"""SELECT e.*,i.content_hash,i.retrieved_at,i.source_published_at
+                    FROM evidence e LEFT JOIN evidence_integrity i ON i.evidence_id=e.id
+                    WHERE e.entity_id IN ({placeholders})
+                    ORDER BY e.observed_at DESC LIMIT 500""",
+                entity_ids,
+            )]
+            for item in evidence:
+                item["raw_metadata"] = json.loads(item.get("raw_metadata") or "{}")
+        # Keep the former top-level campaign fields and entities for compatibility.
+        return {**row, "campaign": row, "entities": members,
+                "relationships": relationships, "evidence": evidence}
     finally:
         store.conn.close()
 
@@ -691,7 +715,7 @@ def scamscan_queue(
         "times_seen, disposition, analyst_note, first_seen, last_seen, breakdown "
         "FROM findings WHERE score >= ?"
     )
-    params = [min_score]
+    params: list[str | int | float] = [min_score]
     if disposition != "all":
         sql += " AND disposition = ?"
         params.append(disposition)
@@ -893,7 +917,7 @@ def scan_url(payload: dict = Body(...)):
 
     def _compute_confidence(scored: dict) -> float:
         """Compute confidence based on evidence completeness."""
-        signals_present = 0
+        signals_present = 0.0
         total_signals = 5
 
         if scored.get("lexicon_score", 0) > 0:

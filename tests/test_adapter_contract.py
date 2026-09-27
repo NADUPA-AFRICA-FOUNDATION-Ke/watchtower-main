@@ -26,7 +26,7 @@ class Fixture(DiscoveryProvider):
     ('operational', None, 'success'), ('limited', None, 'partial'),
     ('provider_error', 'HTTP 429 token=secret', 'rate_limited'),
     ('provider_error', 'HTTP 403', 'unavailable'),
-    ('provider_error', 'HTTP 404', 'failed'),
+    ('provider_error', 'HTTP 404', 'unavailable'),
     ('provider_error', 'HTTP 500', 'failed'),
     ('raise', None, 'failed'), ('hang', None, 'failed'),
 ])
@@ -70,4 +70,19 @@ def test_robots_denial_prevents_page_request():
             return await SafeFetcher(client, resolver=resolver, delay=0).fetch('https://public.test/private')
     result = asyncio.run(run())
     assert 'robots' in result.error
+    assert calls == ['/robots.txt']
+
+
+def test_synchronous_fetcher_blocks_when_robots_server_is_unavailable():
+    from core.fetch import Fetcher
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(503, text='temporarily unavailable')
+    fetcher = Fetcher('Mnara-test', delay=0, transport=httpx.MockTransport(handler))
+    try:
+        result = fetcher.get('https://public.test/path')
+    finally:
+        fetcher.client.close()
+    assert result.error == 'blocked by robots.txt'
     assert calls == ['/robots.txt']

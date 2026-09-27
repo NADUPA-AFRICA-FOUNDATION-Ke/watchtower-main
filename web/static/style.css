@@ -1644,6 +1644,16 @@ textarea#score-text { min-height: 148px; padding: 15px 16px; border-color: #d8db
 .evidence-table button, .record-actions button, .graph-node-list button { min-height: 44px; }
 .graph-node-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .graph-node-list button { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.evidence-graph-svg { width: 100%; max-height: 560px; margin: 12px 0; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+.evidence-graph-edge { stroke: var(--muted); stroke-width: 1.5; }
+.graph-svg-node { cursor: pointer; outline: none; }
+.graph-svg-node circle { fill: var(--accent-soft); stroke: var(--accent-deep); stroke-width: 2; }
+.graph-svg-node text { fill: var(--ink); font: 11px var(--mono); text-anchor: middle; pointer-events: none; }
+.graph-svg-node:focus circle, .graph-svg-node:hover circle { stroke-width: 4; }
+.graph-svg-node[data-type="domain"] circle { fill: var(--accent); }
+.graph-svg-node[data-type="phone_number"] circle,
+.graph-svg-node[data-type="email"] circle,
+.graph-svg-node[data-type="wallet"] circle { fill: var(--med); }
 .record-detail { padding: 16px; border-left: 3px solid var(--low); margin-block: 16px; }
 .record-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .record-actions a { padding: 10px 12px; }
