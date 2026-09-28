@@ -78,13 +78,11 @@ function applyTheme(theme) {
   themeToggle.textContent = terminal ? "[ LIGHT MODE ]" : "[ TERMINAL MODE ]";
 }
 
-let savedTheme = "light";
-try { savedTheme = window.localStorage.getItem(THEME_KEY) || "light"; } catch { /* Storage is optional. */ }
-applyTheme(savedTheme);
+applyTheme(window.localStorage.getItem(THEME_KEY) || "light");
 themeToggle?.addEventListener("click", () => {
   const next = root.dataset.theme === "terminal" ? "light" : "terminal";
   applyTheme(next);
-  try { window.localStorage.setItem(THEME_KEY, next); } catch { /* Keep the theme usable without storage. */ }
+  window.localStorage.setItem(THEME_KEY, next);
 });
 
 /* ------------------------------------------------------------ bootstrap */
@@ -96,15 +94,9 @@ async function init() {
   $("#fetch-bodies").checked = true;
   let data;
   try {
-    const response = await fetch("/api/sources");
-    if (!response.ok) throw new Error("Source status unavailable");
-    data = await response.json();
-    if (!Array.isArray(data.sources)) throw new Error("Invalid source status");
+    data = await (await fetch("/api/sources")).json();
   } catch {
     $("#ai-status").textContent = "server unreachable";
-    $("#system-status-summary").textContent = "Source status unavailable — reload to try again.";
-    $("#status-details").replaceChildren(el("li", "errs", "Could not load source configuration. Check your connection and reload."));
-    $("#go").disabled = true;
     return;
   }
   capabilities = data;
@@ -200,7 +192,7 @@ async function init() {
   // Keep a user's source mix and depth settings between visits, but discard
   // providers that are no longer in the server capability response.
   const prefs = readMonitorPrefs();
-  if ([24, 72, 168, 720, 2160, 4320, 8760].includes(Number(prefs.hours))) {
+  if (Number.isInteger(Number(prefs.hours)) && Number(prefs.hours) >= 24 && Number(prefs.hours) <= 8760) {
     hours = Number(prefs.hours);
     const windowButton = document.querySelector(`#window button[data-h="${hours}"]`);
     if (windowButton) windowButton.click();
@@ -210,7 +202,7 @@ async function init() {
   $("#sweep-limit").value = sweepLimit;
   $("#max-ai").value = maxAi;
   if (Array.isArray(prefs.sources)) {
-    const available = new Set(monitorSources.filter((s) => s.available !== false).map((s) => s.name));
+    const available = new Set(data.sources.filter((s) => s.available !== false).map((s) => s.name));
     selected = new Set(prefs.sources.filter((name) => available.has(name)));
     syncSourceChips();
   }
@@ -265,22 +257,18 @@ async function refreshSystemHealth(sourceData = capabilities) {
     ["operational", "configured", "direct_api", "web_index_only"].includes(value.status)
   );
   const attention = entries.filter(([, value]) =>
-    ["provider_error", "timeout", "network_error", "rate_limited", "auth_missing", "missing_credentials",
+    ["provider_error", "timeout", "network_error", "rate_limited", "missing_credentials",
      "unavailable", "subscription_limited", "limited", "degraded"].includes(value.status)
   );
-  const unverified = entries.filter(([, value]) => value.status === "unknown" || value.status === "disabled");
   $("#system-status-summary").textContent =
     `${good.length} source${good.length === 1 ? "" : "s"} healthy · ` +
-    `${attention.length} need${attention.length === 1 ? "s" : ""} attention · ` +
-    `${unverified.length} unverified/disabled`;
+    `${attention.length} need${attention.length === 1 ? "s" : ""} attention`;
 
   const details = $("#status-details");
   details.replaceChildren(
     el("li", null, `${good.length} source${good.length === 1 ? "" : "s"} healthy`),
     ...(attention.length ? [el("li", null,
       `${attention.length} source${attention.length === 1 ? "" : "s"} need attention — expand source details`)] : []),
-    ...(unverified.length ? [el("li", null,
-      `${unverified.length} source${unverified.length === 1 ? "" : "s"} unverified or disabled`)] : []),
     el("li", null, health.model?.provider && health.model.provider !== "none"
       ? `Model scoring: ${health.model.provider}` : "Model scoring: keyword ranking"),
     el("li", null, health.storage?.persistent
@@ -319,11 +307,9 @@ $("#window").onclick = (e) => {
   $("#window").querySelectorAll("button").forEach((x) => {
     x.classList.remove("is-on");
     x.setAttribute("aria-checked", "false");
-    x.tabIndex = -1;
   });
   b.classList.add("is-on");
   b.setAttribute("aria-checked", "true");
-  b.tabIndex = 0;
   hours = Number(b.dataset.h);
   saveMonitorPrefs();
 };
@@ -397,10 +383,10 @@ $("#reset-controls").onclick = resetMonitorControls;
 /* Two tools, one front door. The views are independent — nothing on the
    scamscan side reads watchtower's store and vice versa — so switching sides
    is only ever showing and hiding, never a state handover. */
-const VIEWS = ["sweep", "archive", "discover", "queue", "score", "cases", "sources", "campaigns", "monitors", "reports", "health", "settings"];
+const VIEWS = ["sweep", "archive", "discover", "queue", "score"];
 const MODE_VIEWS = {
   monitor: ["sweep", "archive"],
-  investigate: ["cases", "discover", "queue", "score", "sources", "campaigns", "monitors", "reports", "health", "settings"],
+  investigate: ["discover", "queue", "score"],
 };
 
 function setMode(mode, navigate = true) {
@@ -443,7 +429,6 @@ document.querySelectorAll(".tab").forEach((tab) => {
     const heading = document.querySelector(`#view-${tab.dataset.view} .view-head`);
     if (heading) heading.focus();
     if (tab.dataset.view === "queue") loadQueue();
-    window.dispatchEvent(new CustomEvent("mnara:view", { detail: tab.dataset.view }));
   };
 });
 
@@ -451,7 +436,6 @@ setMode("monitor", false);
 
 function openHashView() {
   const view = location.hash.slice(1);
-  if (!VIEWS.includes(view)) return;
   const tab = document.querySelector(`.tab[data-view="${view}"]`);
   if (tab && !tab.classList.contains("is-on")) tab.click();
 }
@@ -883,11 +867,9 @@ function segmented(id, attr, apply) {
     $(id).querySelectorAll("button").forEach((x) => {
       x.classList.remove("is-on");
       x.setAttribute("aria-checked", "false");
-      x.tabIndex = -1;
     });
     b.classList.add("is-on");
     b.setAttribute("aria-checked", "true");
-    b.tabIndex = 0;
     apply(b.dataset[attr]);
     loadQueue();
   };
@@ -990,22 +972,17 @@ $("#discover-form").onsubmit = async (e) => {
   button.textContent = "Searching";
   trace.hidden = false;
   stage.textContent = `looking for ${brand}`;
-  ["summary", "coverage", "expansion", "campaigns", "graph"].forEach((panel) => {
-    $(`#discover-${panel}`).replaceChildren();
-  });
+  $("#discover-summary").replaceChildren();
   socialFindings = [];
   socialPage = 1;
   $("#discover-social").replaceChildren();
   out.replaceChildren();
 
   try {
-    const investigationRequest = typeof window !== "undefined" && window.mnaraPreflight
-      ? await window.mnaraPreflight() : { brand, query: $("#discover-query").value.trim() || brand, limit };
-    if (!investigationRequest) { stage.textContent = "Review preflight warnings"; return; }
     const r = await fetch("/api/investigations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(investigationRequest),
+      body: JSON.stringify({ brand, query: $("#discover-query").value.trim() || brand, limit }),
     });
     const d = await r.json();
     if (!r.ok) {
@@ -1014,7 +991,6 @@ $("#discover-form").onsubmit = async (e) => {
       return;
     }
 
-    if (typeof window !== "undefined" && window.mnaraShowInvestigation) window.mnaraShowInvestigation(d);
     const candidates = d.candidates || [];
     stage.textContent = `${candidates.length} domain${candidates.length === 1 ? "" : "s"}`;
     const summary = $("#discover-summary");
@@ -1038,11 +1014,7 @@ $("#discover-form").onsubmit = async (e) => {
     socialFindings = Array.isArray(d.social_findings) ? d.social_findings : [];
     socialPage = 1;
     renderInvestigationSocial(socialFindings, d.social_pagination || {});
-    try {
-      if (!d.graph) await renderInvestigationGraph(d.id);
-    } catch {
-      $("#discover-graph").replaceChildren(el("p", "errs", "Entity graph unavailable. Findings below are still available."));
-    }
+    await renderInvestigationGraph(d.id);
     if (!candidates.length) {
       const empty = el("div", "empty-inline");
       empty.append(el("h3", null, "No candidates returned"),
@@ -1056,7 +1028,7 @@ $("#discover-form").onsubmit = async (e) => {
     out.replaceChildren(el("p", "errs", "Could not reach the discovery service."));
   } finally {
     button.disabled = false;
-    button.textContent = "Discover";
+    button.textContent = "Find sites";
   }
 };
 
@@ -1126,13 +1098,13 @@ function renderInvestigationSocial(findings, pagination = {}) {
 
 function renderInvestigationCoverage(coverage) {
   const box = $("#discover-coverage");
-  const failed = [...(coverage.failed || []), ...(coverage.unavailable || []), ...(coverage.limited || []), ...(coverage.missing_credentials || []), ...(coverage.not_searched || [])];
+  const failed = [...(coverage.failed || []), ...(coverage.unavailable || []), ...(coverage.limited || [])];
   box.replaceChildren(el("h3", null, "Source coverage"),
     el("p", null, `${coverage.successful?.length || 0} successful of ${coverage.configured || 0} configured`),
     el("p", "hint", coverage.statement || "Coverage is limited to accessible sources."));
   const tags = el("div", "tags");
-  (coverage.successful || []).forEach(name => tags.append(el("span", "tag", `Searched: ${name}`)));
-  failed.forEach(item => tags.append(el("span", "tag warn", `${item.provider || item.source}: ${item.status}`)));
+  (coverage.successful || []).forEach(name => tags.append(el("span", "tag", `✓ ${name}`)));
+  failed.forEach(item => tags.append(el("span", "tag warn", `✗ ${item.provider || item.source}: ${item.status}`)));
   box.append(tags);
 }
 
@@ -1176,7 +1148,7 @@ async function renderInvestigationGraph(id) {
   box.replaceChildren();
   if (!id) return;
   const response = await fetch(`/api/investigations/${encodeURIComponent(id)}/graph`);
-  if (!response.ok) throw new Error("Graph unavailable");
+  if (!response.ok) return;
   const graph = await response.json();
   box.append(el("h3", null, `Entity graph · ${graph.nodes.length} nodes · ${graph.edges.length} edges`));
   const nodes = el("div", "graph-nodes");

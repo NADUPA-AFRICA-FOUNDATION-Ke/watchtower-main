@@ -58,8 +58,7 @@ class EvidenceScore:
     contradictory_evidence: list[str] = field(default_factory=list)
     categories: dict[str, float] = field(default_factory=dict)
     sources: list[str] = field(default_factory=list)
-    scoring_version: str = "evidence-v3"
-    factors: list[dict] = field(default_factory=list)
+    scoring_version: str = "evidence-v2"
 
     def dict(self):
         return asdict(self)
@@ -140,10 +139,10 @@ def score_domain(entity, evidence, relationships, entities, brand_config) -> Evi
         try:
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(
                 registration.replace("Z", "+00:00"))).days
-            if 0 <= age <= 30:
+            if age <= 30:
                 categories["domain_characteristics"] = 15
                 strongest.append(f"Domain registration observed {max(age, 0)} days ago")
-            elif 30 < age <= 180:
+            elif age <= 180:
                 categories["domain_characteristics"] = 8
         except (TypeError, ValueError):
             pass
@@ -172,7 +171,7 @@ def score_domain(entity, evidence, relationships, entities, brand_config) -> Evi
     observed_sources = sorted({e.source for e in evidence})
     confidence = min(1.0, round(0.2 + 0.12 * substantive + 0.05 * len(observed_sources), 2))
     if categories["threat_intelligence"] and categories["credential_harvesting"]:
-        verdict = "LIKELY_IMPERSONATION"
+        verdict = "CONFIRMED_IMPERSONATION"
     elif score >= 70 and substantive >= 3:
         verdict = "LIKELY_IMPERSONATION"
     elif score >= 45 and substantive >= 2:
@@ -181,25 +180,5 @@ def score_domain(entity, evidence, relationships, entities, brand_config) -> Evi
         verdict = "WATCHLIST"
     else:
         verdict = "INSUFFICIENT_EVIDENCE"
-    factor_types = {
-        "brand_impersonation": {"discovery", "investigation_seed", "page_inspection"},
-        "credential_harvesting": {"page_inspection"},
-        "threat_intelligence": {"threat_intelligence"},
-        "domain_characteristics": {"rdap_observation"},
-        "hosting_risk": {"discovery", "investigation_seed", "dns_observation", "page_inspection"},
-        "redirect_behavior": {"page_inspection", "redirect_observation"},
-        "social_relationships": {"page_observation", "social_index_observation"},
-        "payment_identifiers": {"page_observation"},
-    }
-    factors = []
-    for factor, points in categories.items():
-        if points <= 0:
-            continue
-        ids = [ev.id for ev in evidence if (
-            ev.evidence_type in factor_types.get(factor, set()) or
-            factor == "campaign_correlation" and ev.evidence_type.startswith("shares_")
-        )]
-        factors.append({"factor": factor, "score": points, "evidence_ids": sorted(set(ids)),
-                        "basis": "observed" if ids else "unpersisted input; not an evidence-backed conclusion"})
     return EvidenceScore(score, confidence, verdict, len(evidence), strongest[:6], contradictory,
-                         categories, observed_sources, factors=factors)
+                         categories, observed_sources)
