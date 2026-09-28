@@ -112,13 +112,7 @@ class DiscoveryOrchestrator:
         target.last_seen = max(target.last_seen, incoming.last_seen)
         return target
 
-    async def investigate(
-        self,
-        brand: str,
-        query: str | None,
-        brand_config: dict,
-        lexicon_terms: tuple[str, ...] = (),
-    ):
+    async def investigate(self, brand: str, query: str | None, brand_config: dict):
         requested = [p.name for p in self.providers]
         iid = self.store.create(brand, query or brand, requested, {
             "zero_key_mode": True,
@@ -136,7 +130,6 @@ class DiscoveryOrchestrator:
             iid, brand, query or brand,
             tuple(x.lower() for x in brand_config.get("official_domains", [])),
             tuple(brand_config.get("aliases", [])), self.max_domains,
-            lexicon_terms=tuple(lexicon_terms),
         )
         brand_entity = Entity("brand", brand.strip().lower(), brand,
                               metadata={"official_domains": list(context.official_domains)})
@@ -144,7 +137,6 @@ class DiscoveryOrchestrator:
         evidence: dict[str, Evidence] = {}
         relationships: dict[str, Relationship] = {}
         health = []
-        social_findings: dict[str, dict[str, Any]] = {}
 
         def absorb(run: ProviderRun):
             health.append(run.health)
@@ -156,14 +148,6 @@ class DiscoveryOrchestrator:
                     entities[entity.id] = entity
             evidence.update({item.id: item for item in run.evidence})
             relationships.update({item.id: item for item in run.relationships})
-            for finding in run.social_findings:
-                if not isinstance(finding, dict):
-                    continue
-                url = str(finding.get("url") or "").strip()
-                if url:
-                    # First observation wins so repeated provider rows cannot
-                    # overwrite the original query/snippet provenance.
-                    social_findings.setdefault(url, dict(finding))
 
         discovery = [p for p in self.providers if set(p.capabilities()) &
                      {"open_web", "domain_discovery", "historical_urls", "social_web_index", "social_api"}]
@@ -475,13 +459,6 @@ class DiscoveryOrchestrator:
                 "successful": successful, "limited": limited, "failed": failed,
                 "unavailable": unavailable,
                 "statement": coverage_statement,
-            },
-            "social_findings": list(social_findings.values())[:120],
-            "social_pagination": {
-                "page": 1,
-                "page_size": 10,
-                "total": min(len(social_findings), 120),
-                "has_next": len(social_findings) > 10,
             },
             "expansion": {
                 "rounds": sorted(expansion_rounds, key=lambda row: row["depth"]),
